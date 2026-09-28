@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,15 +24,16 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -72,6 +73,11 @@ fun PersonalDataScreen(
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var showAddCardSheet by remember { mutableStateOf(false) }
     var selectedCardToView by remember { mutableStateOf<TextCard?>(null) }
+    var cardToEdit by remember { mutableStateOf<TextCard?>(null) }
+    var cardToMove by remember { mutableStateOf<TextCard?>(null) }
+    var cardToDelete by remember { mutableStateOf<TextCard?>(null) }
+    var folderToRename by remember { mutableStateOf<Folder?>(null) }
+    var folderToDelete by remember { mutableStateOf<Folder?>(null) }
 
     // Support Android Back navigation when inside a folder
     BackHandler(enabled = uiState.currentFolder != null) {
@@ -87,7 +93,7 @@ fun PersonalDataScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Add Folder Button (only on root)
-                if (uiState.currentFolder == null) {
+                if (uiState.currentFolder == null && !uiState.showOnlyFavorites) {
                     FloatingActionButton(
                         onClick = { showAddFolderDialog = true },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -107,7 +113,10 @@ fun PersonalDataScreen(
 
                 // Add Card FAB
                 FloatingActionButton(
-                    onClick = { showAddCardSheet = true },
+                    onClick = {
+                        cardToEdit = null
+                        showAddCardSheet = true
+                    },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shape = CircleShape,
@@ -195,7 +204,7 @@ fun PersonalDataScreen(
                 onValueChange = { viewModel.setSearchQuery(it) },
                 placeholder = {
                     Text(
-                        if (isArabic) "بحث في الملاحظات والبيانات..." else "Search cards & notes...",
+                        if (isArabic) "بحث في العناوين والمحتوى..." else "Search titles & content...",
                         fontSize = 14.sp
                     )
                 },
@@ -225,14 +234,56 @@ fun PersonalDataScreen(
                 singleLine = true
             )
 
+            // Filter Chips: All vs Favorites (Only on root view when not searching)
+            if (uiState.currentFolder == null && uiState.searchQuery.isBlank()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !uiState.showOnlyFavorites,
+                        onClick = { viewModel.setShowOnlyFavorites(false) },
+                        label = { Text(if (isArabic) "الكل" else "All") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+
+                    FilterChip(
+                        selected = uiState.showOnlyFavorites,
+                        onClick = { viewModel.setShowOnlyFavorites(true) },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = if (uiState.showOnlyFavorites) Color(0xFFEAB308) else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (isArabic) "المفضلة" else "Favorites")
+                            }
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier.testTag("favorites_filter_chip")
+                    )
+                }
+            }
+
             // Content Area
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Section: Folders (only shown on root view when query is blank)
-                if (uiState.currentFolder == null && uiState.searchQuery.isBlank()) {
+                // Section: Folders (only shown on root view when query is blank and not in favorites mode)
+                if (uiState.currentFolder == null && uiState.searchQuery.isBlank() && !uiState.showOnlyFavorites) {
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -272,22 +323,7 @@ fun PersonalDataScreen(
                         }
                     }
 
-                    if (uiState.folders.isEmpty()) {
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (isArabic) "لا توجد مجلدات بعد. اضغط + مجلد جديد لإنشاء مجلد." else "No folders yet. Tap + New Folder to create one.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(14.dp)
-                                )
-                            }
-                        }
-                    } else {
+                    if (uiState.folders.isNotEmpty()) {
                         items(uiState.folders, key = { it.id }) { folder ->
                             val cardCount = uiState.allCards.count { it.folderId == folder.id }
                             FolderCard(
@@ -295,15 +331,28 @@ fun PersonalDataScreen(
                                 cardCount = cardCount,
                                 isArabic = isArabic,
                                 onClick = { viewModel.openFolder(folder.id) },
-                                onDelete = { viewModel.deleteFolder(folder.id) }
+                                onRename = { folderToRename = folder },
+                                onDelete = { folderToDelete = folder }
                             )
                         }
                     }
 
                     item {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = if (isArabic) "البطاقات والملاحظات النصية" else "Text Cards & Notes",
+                            text = if (isArabic) "البطاقات العامة (بدون مجلد)" else "Unfiled Cards",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Header for Favorites view
+                if (uiState.currentFolder == null && uiState.showOnlyFavorites && uiState.searchQuery.isBlank()) {
+                    item {
+                        Text(
+                            text = if (isArabic) "البطاقات المفضلة ⭐" else "Favorite Cards ⭐",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -314,16 +363,30 @@ fun PersonalDataScreen(
                 // Section: Text Cards
                 if (uiState.displayedCards.isEmpty()) {
                     item {
+                        val emptyTitle = when {
+                            uiState.searchQuery.isNotBlank() -> if (isArabic) "لا توجد نتائج بحث" else "No matching cards"
+                            uiState.showOnlyFavorites -> if (isArabic) "لا توجد بطاقات مفضلة بعد" else "No favorite cards yet"
+                            uiState.currentFolder != null -> if (isArabic) "لا توجد بطاقات في هذا المجلد" else "No cards in this folder"
+                            uiState.folders.isEmpty() -> if (isArabic) "لا توجد مجلدات أو بطاقات بعد" else "No folders or cards yet"
+                            else -> if (isArabic) "لا توجد بطاقات عامة بعد" else "No unfiled cards yet"
+                        }
+
+                        val emptySubtitle = when {
+                            uiState.searchQuery.isNotBlank() -> if (isArabic) "جرب كلمة بحث أخرى." else "Try a different search term."
+                            uiState.showOnlyFavorites -> if (isArabic) "يمكنك تمييز أي بطاقة بنجمة لتظهر هنا." else "Star any card to access it quickly here."
+                            uiState.currentFolder != null -> if (isArabic) "ابدأ بإضافة بطاقة نصية داخل هذا المجلد." else "Start adding text cards to this folder."
+                            else -> if (isArabic) "أنشئ بطاقات نصية لحفظ الأفكار، الملاحظات الهامة، أو البيانات المحمية." else "Create text cards to save personal notes, ideas, or protected data."
+                        }
+
                         EmptyStateView(
                             icon = Icons.Default.NoteAdd,
-                            title = if (isArabic) "لا توجد بطاقات نصية" else "No text cards found",
-                            subtitle = if (isArabic) {
-                                "أنشئ بطاقات نصية لحفظ الأفكار، الملاحظات الهامة، أو البيانات المحمية."
-                            } else {
-                                "Create text cards to save personal notes, ideas, or protected data."
-                            },
-                            actionButtonText = if (isArabic) "+ إضافة بطاقة نصية" else "+ Add Text Card",
-                            onActionClick = { showAddCardSheet = true }
+                            title = emptyTitle,
+                            subtitle = emptySubtitle,
+                            actionButtonText = if (uiState.searchQuery.isBlank()) (if (isArabic) "+ إضافة بطاقة نصية" else "+ Add Text Card") else null,
+                            onActionClick = {
+                                cardToEdit = null
+                                showAddCardSheet = true
+                            }
                         )
                     }
                 } else {
@@ -332,7 +395,13 @@ fun PersonalDataScreen(
                             card = card,
                             isArabic = isArabic,
                             onClick = { selectedCardToView = card },
-                            onDelete = { viewModel.deleteTextCard(card.id) }
+                            onToggleFavorite = { viewModel.toggleFavorite(card.id) },
+                            onEdit = {
+                                cardToEdit = card
+                                showAddCardSheet = true
+                            },
+                            onMove = { cardToMove = card },
+                            onDelete = { cardToDelete = card }
                         )
                     }
                 }
@@ -350,21 +419,153 @@ fun PersonalDataScreen(
             )
         }
 
-        // Sheet: Add Card
+        // Dialog: Rename Folder
+        folderToRename?.let { folder ->
+            RenameFolderDialog(
+                folder = folder,
+                isArabic = isArabic,
+                onDismiss = { folderToRename = null },
+                onRename = { newName ->
+                    viewModel.renameFolder(folder.id, newName)
+                }
+            )
+        }
+
+        // Dialog: Delete Folder Confirmation (explains what will happen)
+        folderToDelete?.let { folder ->
+            AlertDialog(
+                onDismissRequest = { folderToDelete = null },
+                title = {
+                    Text(
+                        text = if (isArabic) "حذف المجلد" else "Delete Folder",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = if (isArabic) {
+                            "هل أنت متأكد من حذف مجلد \"${folder.name}\"؟ سيتم حذف جميع البطاقات الموجودة بداخله نهائياً."
+                        } else {
+                            "Are you sure you want to delete folder \"${folder.name}\"? All cards inside it will be permanently deleted."
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteFolder(folder.id)
+                            folderToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.testTag("confirm_delete_folder_btn")
+                    ) {
+                        Text(if (isArabic) "حذف المجلد" else "Delete Folder")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { folderToDelete = null }) {
+                        Text(if (isArabic) "إلغاء" else "Cancel")
+                    }
+                },
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        // Dialog: Delete Card Confirmation
+        cardToDelete?.let { card ->
+            AlertDialog(
+                onDismissRequest = { cardToDelete = null },
+                title = {
+                    Text(
+                        text = if (isArabic) "حذف البطاقة" else "Delete Card",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = if (isArabic) {
+                            "هل أنت متأكد من حذف بطاقة \"${card.title}\"؟ لا يمكن التراجع عن هذا الإجراء."
+                        } else {
+                            "Are you sure you want to delete card \"${card.title}\"? This action cannot be undone."
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteTextCard(card.id)
+                            cardToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.testTag("confirm_delete_card_btn")
+                    ) {
+                        Text(if (isArabic) "حذف" else "Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { cardToDelete = null }) {
+                        Text(if (isArabic) "إلغاء" else "Cancel")
+                    }
+                },
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        // Dialog: Move Card to another folder
+        cardToMove?.let { card ->
+            MoveCardDialog(
+                card = card,
+                folders = uiState.folders,
+                isArabic = isArabic,
+                onDismiss = { cardToMove = null },
+                onMove = { newFolderId ->
+                    viewModel.moveCard(card.id, newFolderId)
+                }
+            )
+        }
+
+        // Sheet: Add or Edit Card
         if (showAddCardSheet) {
             AddTextCardBottomSheet(
                 folders = uiState.folders,
                 initialFolderId = uiState.currentFolder?.id,
+                cardToEdit = cardToEdit,
                 isArabic = isArabic,
-                onDismiss = { showAddCardSheet = false },
-                onAddCard = { title, content, folderId, isPasswordProtected, tags ->
-                    viewModel.addTextCard(
-                        title = title,
-                        content = content,
-                        folderId = folderId,
-                        isPasswordProtected = isPasswordProtected,
-                        tags = tags
-                    )
+                onDismiss = {
+                    showAddCardSheet = false
+                    cardToEdit = null
+                },
+                onSaveCard = { title, content, folderId, isFavorite, isPasswordProtected, passwordHash, tags ->
+                    if (cardToEdit != null) {
+                        viewModel.updateTextCard(
+                            cardToEdit!!.copy(
+                                title = title,
+                                content = content,
+                                folderId = folderId,
+                                isFavorite = isFavorite,
+                                isPasswordProtected = isPasswordProtected,
+                                passwordHash = passwordHash,
+                                tags = tags,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    } else {
+                        viewModel.addTextCard(
+                            title = title,
+                            content = content,
+                            folderId = folderId,
+                            isFavorite = isFavorite,
+                            isPasswordProtected = isPasswordProtected,
+                            passwordHash = passwordHash,
+                            tags = tags
+                        )
+                    }
                 }
             )
         }

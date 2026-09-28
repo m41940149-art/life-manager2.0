@@ -1,8 +1,6 @@
 package com.example.ui.data
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -15,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -26,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,11 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Folder
 import com.example.model.TextCard
 import com.example.ui.components.BadgeChip
+import com.example.util.PasswordUtils
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -54,6 +57,8 @@ fun ViewTextCardDialog(
     onDismiss: () -> Unit
 ) {
     var isUnlocked by remember { mutableStateOf(!card.isPasswordProtected) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -110,7 +115,7 @@ fun ViewTextCardDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (card.isPasswordProtected && !isUnlocked) {
-                    // Locked placeholder state
+                    // Locked state requiring password verification
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -119,7 +124,7 @@ fun ViewTextCardDialog(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(20.dp),
+                                .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
@@ -136,18 +141,50 @@ fun ViewTextCardDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (isArabic) "انقر لإلغاء القفل وعرض البيانات الحساسة" else "Tap to unlock and reveal sensitive notes",
+                                text = if (isArabic) "أدخل كلمة المرور لعرض المحتوى" else "Enter password to reveal content",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = passwordInput,
+                                onValueChange = {
+                                    passwordInput = it
+                                    if (passwordError) passwordError = false
+                                },
+                                label = { Text(if (isArabic) "كلمة المرور" else "Password") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                isError = passwordError,
+                                supportingText = if (passwordError) {
+                                    { Text(if (isArabic) "كلمة المرور غير صحيحة" else "Incorrect password") }
+                                } else null,
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("unlock_password_input"),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
                             Button(
-                                onClick = { isUnlocked = true },
+                                onClick = {
+                                    val isMatch = PasswordUtils.verifyPassword(passwordInput, card.passwordHash)
+                                    if (isMatch) {
+                                        isUnlocked = true
+                                    } else {
+                                        passwordError = true
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary
                                 ),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.testTag("unlock_card_btn")
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("unlock_card_btn")
                             ) {
                                 Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))

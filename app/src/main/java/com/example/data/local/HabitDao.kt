@@ -64,4 +64,22 @@ interface HabitDao {
 
     @Query("DELETE FROM habit_missed_resolutions WHERE habitId = :habitId")
     suspend fun deleteMissedResolutionsForHabit(habitId: String)
+
+    @Query("SELECT * FROM habits")
+    suspend fun getAllHabitsSync(): List<HabitEntity>
+
+    @Query("SELECT * FROM habit_completions")
+    suspend fun getAllCompletionsSync(): List<HabitCompletionEntity>
+
+    @Query("SELECT * FROM habit_missed_resolutions")
+    suspend fun getAllMissedResolutionsSync(): List<HabitMissedResolutionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHabits(habits: List<HabitEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCompletions(completions: List<HabitCompletionEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMissedResolutions(resolutions: List<HabitMissedResolutionEntity>)
 }

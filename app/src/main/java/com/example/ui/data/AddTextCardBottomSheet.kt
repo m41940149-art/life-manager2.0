@@ -1,5 +1,6 @@
 package com.example.ui.data
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -9,12 +10,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
@@ -39,33 +43,48 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Folder
+import com.example.model.TextCard
+import com.example.util.PasswordUtils
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddTextCardBottomSheet(
     folders: List<Folder>,
     initialFolderId: String?,
+    cardToEdit: TextCard? = null,
     isArabic: Boolean,
     onDismiss: () -> Unit,
-    onAddCard: (
+    onSaveCard: (
         title: String,
         content: String,
         folderId: String?,
+        isFavorite: Boolean,
         isPasswordProtected: Boolean,
+        passwordHash: String?,
         tags: List<String>
     ) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var selectedFolderId by remember { mutableStateOf(initialFolderId) }
-    var isPasswordProtected by remember { mutableStateOf(false) }
-    var tagsInput by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf(cardToEdit?.title ?: "") }
+    var content by remember { mutableStateOf(cardToEdit?.content ?: "") }
+    var selectedFolderId by remember { mutableStateOf(cardToEdit?.folderId ?: initialFolderId) }
+    var isFavorite by remember { mutableStateOf(cardToEdit?.isFavorite ?: false) }
+    var isPasswordProtected by remember { mutableStateOf(cardToEdit?.isPasswordProtected ?: false) }
+
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+
+    var tagsInput by remember { mutableStateOf(cardToEdit?.tags?.joinToString(", ") ?: "") }
     var titleError by remember { mutableStateOf(false) }
+
+    val isEditing = cardToEdit != null
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,7 +106,11 @@ fun AddTextCardBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isArabic) "إضافة بطاقة نصية" else "Add Text Card",
+                    text = if (isEditing) {
+                        if (isArabic) "تعديل البطاقة النصية" else "Edit Text Card"
+                    } else {
+                        if (isArabic) "إضافة بطاقة نصية" else "Add Text Card"
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -125,7 +148,7 @@ fun AddTextCardBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card Content
+            // Card Content (suitable for long text)
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
@@ -134,8 +157,8 @@ fun AddTextCardBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("text_card_content_input"),
-                minLines = 4,
-                maxLines = 8,
+                minLines = 5,
+                maxLines = 14,
                 shape = RoundedCornerShape(12.dp)
             )
 
@@ -201,7 +224,7 @@ fun AddTextCardBottomSheet(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (isArabic) "تأمين محتوى البطاقة برمز سري" else "Keep sensitive text protected",
+                            text = if (isArabic) "تأمين محتوى البطاقة برمز سري مشفر" else "Keep sensitive text protected",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -209,9 +232,68 @@ fun AddTextCardBottomSheet(
                 }
                 Switch(
                     checked = isPasswordProtected,
-                    onCheckedChange = { isPasswordProtected = it },
+                    onCheckedChange = {
+                        isPasswordProtected = it
+                        if (!it) {
+                            password = ""
+                            confirmPassword = ""
+                            passwordError = null
+                        }
+                    },
                     modifier = Modifier.testTag("protect_switch")
                 )
+            }
+
+            // Secure Password Creation Fields (never displayed in plain text)
+            AnimatedVisibility(visible = isPasswordProtected) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            if (passwordError != null) passwordError = null
+                        },
+                        label = {
+                            Text(
+                                if (isEditing && cardToEdit.isPasswordProtected) {
+                                    if (isArabic) "كلمة المرور الجديدة (اتركها فارغة للإبقاء على الحالية)" else "New Password (leave empty to keep current)"
+                                } else {
+                                    if (isArabic) "كلمة المرور *" else "Password *"
+                                }
+                            )
+                        },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        isError = passwordError != null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("password_input"),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = {
+                            confirmPassword = it
+                            if (passwordError != null) passwordError = null
+                        },
+                        label = { Text(if (isArabic) "تأكيد كلمة المرور *" else "Confirm Password *") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        isError = passwordError != null,
+                        supportingText = if (passwordError != null) {
+                            { Text(passwordError!!) }
+                        } else null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("confirm_password_input"),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -234,19 +316,40 @@ fun AddTextCardBottomSheet(
                 onClick = {
                     if (title.isBlank()) {
                         titleError = true
-                    } else {
-                        val tags = tagsInput.split(",")
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                        onAddCard(
-                            title,
-                            content,
-                            selectedFolderId,
-                            isPasswordProtected,
-                            tags
-                        )
-                        onDismiss()
+                        return@Button
                     }
+
+                    var finalPasswordHash: String? = cardToEdit?.passwordHash
+                    if (isPasswordProtected) {
+                        if (password.isNotBlank() || !isEditing || cardToEdit?.passwordHash == null) {
+                            if (password.isBlank()) {
+                                passwordError = if (isArabic) "يرجى إدخال كلمة المرور" else "Please enter password"
+                                return@Button
+                            }
+                            if (password != confirmPassword) {
+                                passwordError = if (isArabic) "كلمتا المرور غير متطابقتين" else "Passwords do not match"
+                                return@Button
+                            }
+                            finalPasswordHash = PasswordUtils.hashPassword(password)
+                        }
+                    } else {
+                        finalPasswordHash = null
+                    }
+
+                    val tags = tagsInput.split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+
+                    onSaveCard(
+                        title,
+                        content,
+                        selectedFolderId,
+                        isFavorite,
+                        isPasswordProtected,
+                        finalPasswordHash,
+                        tags
+                    )
+                    onDismiss()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -257,10 +360,14 @@ fun AddTextCardBottomSheet(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(if (isEditing) Icons.Default.Check else Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isArabic) "حفظ البطاقة" else "Save Card",
+                    text = if (isEditing) {
+                        if (isArabic) "حفظ التعديلات" else "Save Changes"
+                    } else {
+                        if (isArabic) "حفظ البطاقة" else "Save Card"
+                    },
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

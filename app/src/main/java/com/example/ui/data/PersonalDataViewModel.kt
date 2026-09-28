@@ -9,7 +9,6 @@ import com.example.model.TextCard
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -19,7 +18,8 @@ data class PersonalDataUiState(
     val allCards: List<TextCard> = emptyList(),
     val currentFolder: Folder? = null,
     val displayedCards: List<TextCard> = emptyList(),
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val showOnlyFavorites: Boolean = false
 )
 
 class PersonalDataViewModel(
@@ -28,28 +28,31 @@ class PersonalDataViewModel(
 
     private val _currentFolderId = MutableStateFlow<String?>(null)
     private val _searchQuery = MutableStateFlow("")
+    private val _showOnlyFavorites = MutableStateFlow(false)
 
     val uiState: StateFlow<PersonalDataUiState> = combine(
         repository.getFolders(),
         repository.getTextCards(),
         _currentFolderId,
-        _searchQuery
-    ) { folders, cards, currentFolderId, query ->
+        _searchQuery,
+        _showOnlyFavorites
+    ) { folders, cards, currentFolderId, query, onlyFavs ->
         val currentFolder = folders.find { it.id == currentFolderId }
 
-        val cardsInScope = if (currentFolderId == null) {
-            cards // At root, show all or unfiled cards
-        } else {
-            cards.filter { it.folderId == currentFolderId }
+        val cardsInScope = when {
+            onlyFavs -> cards.filter { it.isFavorite }
+            currentFolderId != null -> cards.filter { it.folderId == currentFolderId }
+            else -> cards.filter { it.folderId == null } // Root shows unfiled cards
         }
 
         val filteredCards = if (query.isBlank()) {
             cardsInScope
         } else {
-            cardsInScope.filter {
+            // When user searches, search across relevant cards or all cards if at root
+            val searchBase = if (currentFolderId != null) cardsInScope else cards
+            searchBase.filter {
                 it.title.contains(query, ignoreCase = true) ||
-                        it.content.contains(query, ignoreCase = true) ||
-                        it.tags.any { tag -> tag.contains(query, ignoreCase = true) }
+                        it.content.contains(query, ignoreCase = true)
             }
         }
 
@@ -58,7 +61,8 @@ class PersonalDataViewModel(
             allCards = cards,
             currentFolder = currentFolder,
             displayedCards = filteredCards,
-            searchQuery = query
+            searchQuery = query,
+            showOnlyFavorites = onlyFavs
         )
     }.stateIn(
         scope = viewModelScope,
@@ -68,6 +72,7 @@ class PersonalDataViewModel(
 
     fun openFolder(folderId: String) {
         _currentFolderId.value = folderId
+        _showOnlyFavorites.value = false
     }
 
     fun navigateBackToRoot(): Boolean {
@@ -82,6 +87,10 @@ class PersonalDataViewModel(
         _searchQuery.value = query
     }
 
+    fun setShowOnlyFavorites(show: Boolean) {
+        _showOnlyFavorites.value = show
+    }
+
     fun addFolder(name: String, description: String, colorHex: Long, iconName: String) {
         viewModelScope.launch {
             val folder = Folder(
@@ -91,6 +100,12 @@ class PersonalDataViewModel(
                 iconName = iconName
             )
             repository.addFolder(folder)
+        }
+    }
+
+    fun renameFolder(folderId: String, newName: String) {
+        viewModelScope.launch {
+            repository.renameFolder(folderId, newName.trim())
         }
     }
 
@@ -107,24 +122,46 @@ class PersonalDataViewModel(
         title: String,
         content: String,
         folderId: String?,
-        isPasswordProtected: Boolean,
-        tags: List<String>
+        isFavorite: Boolean = false,
+        isPasswordProtected: Boolean = false,
+        passwordHash: String? = null,
+        tags: List<String> = emptyList()
     ) {
         viewModelScope.launch {
             val card = TextCard(
                 title = title.trim(),
                 content = content.trim(),
                 folderId = folderId,
+                isFavorite = isFavorite,
                 isPasswordProtected = isPasswordProtected,
+                passwordHash = passwordHash,
                 tags = tags
             )
             repository.addTextCard(card)
         }
     }
 
+    fun updateTextCard(card: TextCard) {
+        viewModelScope.launch {
+            repository.updateTextCard(card)
+        }
+    }
+
     fun deleteTextCard(cardId: String) {
         viewModelScope.launch {
             repository.deleteTextCard(cardId)
+        }
+    }
+
+    fun toggleFavorite(cardId: String) {
+        viewModelScope.launch {
+            repository.toggleFavorite(cardId)
+        }
+    }
+
+    fun moveCard(cardId: String, newFolderId: String?) {
+        viewModelScope.launch {
+            repository.moveCardToFolder(cardId, newFolderId)
         }
     }
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.data.local.HabitCompletionEntity
 import com.example.data.local.HabitDao
 import com.example.data.local.HabitMissedResolutionEntity
+import com.example.data.local.SyncTombstoneDao
+import com.example.data.local.SyncTombstoneEntity
 import com.example.data.local.parseDaysOfWeek
 import com.example.data.local.toDomain
 import com.example.data.local.toEntity
@@ -18,7 +20,8 @@ import kotlinx.coroutines.flow.map
 
 class RoomHabitRepository(
     private val habitDao: HabitDao,
-    private val context: Context
+    private val context: Context,
+    private val syncTombstoneDao: SyncTombstoneDao? = null
 ) : HabitRepository {
 
     override fun getHabits(): Flow<List<Habit>> {
@@ -103,6 +106,12 @@ class RoomHabitRepository(
         habitDao.deleteCompletionsForHabit(habitId)
         habitDao.deleteMissedResolutionsForHabit(habitId)
         habitDao.deleteHabitById(habitId)
+        syncTombstoneDao?.insertTombstone(
+            SyncTombstoneEntity(
+                entityType = "HABIT",
+                entityId = habitId
+            )
+        )
     }
 
     override suspend fun toggleHabitCheckIn(habitId: String, dateTimestamp: Long) {
@@ -110,6 +119,13 @@ class RoomHabitRepository(
         val isCompleted = habitDao.isCompletedOnDate(habitId, normalizedDate)
         if (isCompleted) {
             habitDao.deleteCompletion(habitId, normalizedDate)
+            syncTombstoneDao?.insertTombstone(
+                SyncTombstoneEntity(
+                    entityType = "HABIT_COMPLETION",
+                    entityId = habitId,
+                    extraId = normalizedDate.toString()
+                )
+            )
         } else {
             // If checking in, remove any broken resolution for this date as well
             habitDao.deleteMissedResolution(habitId, normalizedDate)

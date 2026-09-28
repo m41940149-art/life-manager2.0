@@ -39,4 +39,7 @@ interface TaskDao {
 
     @Query("SELECT COUNT(*) FROM tasks WHERE syncStatus != 'PENDING_DELETE'")
     suspend fun getTaskCount(): Int
+
+    @Query("SELECT * FROM tasks")
+    suspend fun getAllTasksSync(): List<TaskEntity>
 }

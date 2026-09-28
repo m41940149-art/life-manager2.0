@@ -9,18 +9,11 @@ enum class SurveyFrequency(val titleAr: String, val titleEn: String) {
     YEARLY("سنوي", "Yearly")
 }
 
-enum class QuestionType(val titleAr: String, val titleEn: String) {
-    RATING_5("تقييم (١ - ٥)", "Rating (1 - 5)"),
-    YES_NO("نعم / لا", "Yes / No"),
-    TEXT("نص حر", "Short Text"),
-    SCALE_10("مقياس (١ - ١٠)", "Scale (1 - 10)")
-}
-
 data class SurveyQuestion(
     val id: String = UUID.randomUUID().toString(),
-    val text: String,
-    val type: QuestionType = QuestionType.RATING_5,
-    val options: List<String> = emptyList()
+    val surveyId: String = "",
+    val questionOrder: Int = 0,
+    val questionText: String = ""
 )
 
 data class Survey(
@@ -29,5 +22,27 @@ data class Survey(
     val description: String = "",
     val frequency: SurveyFrequency = SurveyFrequency.DAILY,
     val questions: List<SurveyQuestion> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )
+
+data class SurveyAnswer(
+    val id: String = UUID.randomUUID().toString(),
+    val responseId: String = "",
+    val questionId: String,
+    val answerText: String
+)
+
+data class SurveyResponse(
+    val id: String = UUID.randomUUID().toString(),
+    val surveyId: String,
+    val occurrenceNumber: Int,
+    val occurrenceDate: Long = System.currentTimeMillis(),
+    val answers: List<SurveyAnswer> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    fun displayTitle(isArabic: Boolean): String {
+        return if (isArabic) "استبيان يوم $occurrenceNumber" else "Survey day $occurrenceNumber"
+    }
+}

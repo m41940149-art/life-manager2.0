@@ -1,6 +1,8 @@
 package com.example.data
 
 import com.example.data.local.SyncStatus
+import com.example.data.local.SyncTombstoneDao
+import com.example.data.local.SyncTombstoneEntity
 import com.example.data.local.TaskDao
 import com.example.data.local.toDomain
 import com.example.data.local.toEntity
@@ -9,7 +11,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class RoomTaskRepository(
-    private val taskDao: TaskDao
+    private val taskDao: TaskDao,
+    private val syncTombstoneDao: SyncTombstoneDao? = null
 ) : TaskRepository {
 
     override fun getTasks(): Flow<List<Task>> {
@@ -39,6 +42,12 @@ class RoomTaskRepository(
 
     override suspend fun deleteTask(taskId: String) {
         taskDao.deleteTaskById(taskId)
+        syncTombstoneDao?.insertTombstone(
+            SyncTombstoneEntity(
+                entityType = "TASK",
+                entityId = taskId
+            )
+        )
     }
 
     override suspend fun toggleTaskCompletion(taskId: String) {
