@@ -70,6 +70,7 @@ fun SyncStatusDialog(
         SyncState.SYNCED -> if (isArabic) "تمت المزامنة بنجاح" else "Synced"
         SyncState.OFFLINE -> if (isArabic) "غير متصل بالإنترنت" else "Offline"
         SyncState.NOT_CONFIGURED -> if (isArabic) "الوضع المحلي (أوفلاين أولاً)" else "Local Mode (Offline-First)"
+        SyncState.SIGNED_OUT -> if (isArabic) "لم يتم تسجيل الدخول" else "Signed Out"
         SyncState.ERROR -> if (isArabic) "حدث خطأ أثناء المزامنة" else "Sync Error"
     }
 
@@ -78,6 +79,7 @@ fun SyncStatusDialog(
         SyncState.SYNCED -> Icons.Default.CloudDone
         SyncState.OFFLINE -> Icons.Default.CloudOff
         SyncState.NOT_CONFIGURED -> Icons.Default.CloudOff
+        SyncState.SIGNED_OUT -> Icons.Default.CloudOff
         SyncState.ERROR -> Icons.Default.ErrorOutline
         SyncState.IDLE -> Icons.Default.CloudDone
     }
@@ -87,6 +89,7 @@ fun SyncStatusDialog(
         SyncState.SYNCING -> MaterialTheme.colorScheme.primary
         SyncState.OFFLINE -> Color(0xFFE65100)
         SyncState.NOT_CONFIGURED -> MaterialTheme.colorScheme.secondary
+        SyncState.SIGNED_OUT -> MaterialTheme.colorScheme.secondary
         SyncState.ERROR -> MaterialTheme.colorScheme.error
         SyncState.IDLE -> MaterialTheme.colorScheme.primary
     }
