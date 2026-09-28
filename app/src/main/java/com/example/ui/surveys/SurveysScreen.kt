@@ -79,9 +79,6 @@ fun SurveysScreen(
                 onOpenEditResponse = { resp ->
                     viewModel.openEditResponse(resp)
                 },
-                onCopyResponse = { respId ->
-                    viewModel.copyOccurrence(respId)
-                },
                 onDeleteResponse = { respId ->
                     viewModel.deleteOccurrence(respId)
                 }
