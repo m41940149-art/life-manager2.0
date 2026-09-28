@@ -56,10 +56,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.example.model.Survey
 import com.example.model.SurveyResponse
 import com.example.ui.components.BadgeChip
@@ -74,10 +78,32 @@ fun SurveyOccurrenceDetailScreen(
     onBack: () -> Unit,
     onSaveOccurrence: (answers: Map<String, String>, onSaved: () -> Unit) -> Unit,
     onOpenEditResponse: (SurveyResponse) -> Unit,
-    onCopyResponse: (responseId: String) -> Unit,
     onDeleteResponse: (responseId: String) -> Unit
 ) {
     BackHandler(onBack = onBack)
+
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    // Copies the questions and answers of a saved occurrence as plain text
+    fun copyResponseText(response: SurveyResponse) {
+        val text = buildString {
+            append(survey.name).append(" - ").append(response.displayTitle(isArabic))
+            append("\n\n")
+            survey.questions.forEachIndexed { qIndex, question ->
+                val ans = response.answers.find { it.questionId == question.id }?.answerText?.trim().orEmpty()
+                append("${qIndex + 1}. ${question.questionText}\n")
+                append(if (ans.isNotBlank()) ans else "-")
+                append("\n\n")
+            }
+        }.trimEnd()
+        clipboardManager.setText(AnnotatedString(text))
+        Toast.makeText(
+            context,
+            if (isArabic) "تم نسخ الأسئلة والإجابات" else "Questions and answers copied",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var responseToDelete by remember { mutableStateOf<SurveyResponse?>(null) }
@@ -340,7 +366,7 @@ fun SurveyOccurrenceDetailScreen(
                                                 }
 
                                                 IconButton(
-                                                    onClick = { onCopyResponse(response.id) },
+                                                    onClick = { copyResponseText(response) },
                                                     modifier = Modifier.testTag("copy_occurrence_${response.occurrenceNumber}")
                                                 ) {
                                                     Icon(
