@@ -123,6 +123,7 @@ fun AppTopBar(
                     SyncState.SYNCED -> Icons.Default.CloudDone
                     SyncState.OFFLINE -> Icons.Default.CloudOff
                     SyncState.NOT_CONFIGURED -> Icons.Default.CloudOff
+                    SyncState.SIGNED_OUT -> Icons.Default.CloudOff
                     SyncState.ERROR -> Icons.Default.ErrorOutline
                     SyncState.IDLE -> Icons.Default.CloudDone
                 }
@@ -131,6 +132,7 @@ fun AppTopBar(
                     SyncState.SYNCED -> if (isArabic) "متزامن" else "Synced"
                     SyncState.OFFLINE -> if (isArabic) "أوفلاين" else "Offline"
                     SyncState.NOT_CONFIGURED -> if (isArabic) "محلي" else "Local"
+                    SyncState.SIGNED_OUT -> if (isArabic) "غير مسجّل" else "Signed out"
                     SyncState.ERROR -> if (isArabic) "خطأ" else "Error"
                     SyncState.IDLE -> if (isArabic) "جاهز" else "Ready"
                 }
