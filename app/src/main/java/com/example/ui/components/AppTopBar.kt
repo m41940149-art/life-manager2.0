@@ -82,8 +82,8 @@ fun AppTopBar(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
-            ) 
-              Spacer(modifier = Modifier.weight(1f)) 
+                    ) {
+                Spacer(modifier = Modifier.weight(1f)) 
                 // Sync status indicator chip
                 val syncIcon = when (syncInfo.state) {
                     SyncState.SYNCING -> Icons.Default.Sync
