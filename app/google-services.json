@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "589960343126-oa8jah97f5r20i44dcd860cvlcetetbj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.itqan.prmvbx",
+            "certificate_hash": "9eb1e1d3741e18e900704e751365fc000118396c"
+          }
+        },
+        {
           "client_id": "589960343126-77ub7mt2d1cfg9nu5f6e7lh9a0so30ie.apps.googleusercontent.com",
           "client_type": 3
         }
