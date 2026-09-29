@@ -93,11 +93,13 @@ class SyncPreferences(context: Context) {
 
     private fun loadSyncInfo(): SyncInfo {
         val stateName = prefs.getString(KEY_LAST_STATE, SyncState.IDLE.name)
-        val state = try {
+        val loaded = try {
             SyncState.valueOf(stateName ?: SyncState.IDLE.name)
         } catch (_: Exception) {
             SyncState.IDLE
         }
+        // A sync can't still be running after a process restart
+        val state = if (loaded == SyncState.SYNCING) SyncState.IDLE else loaded
         return SyncInfo(
             state = state,
             lastSyncTime = prefs.getLong(KEY_LAST_SYNC_TIME, 0L),
