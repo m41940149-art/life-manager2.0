@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class PersonalDataUiState(
     val folders: List<Folder> = emptyList(),
@@ -25,6 +27,9 @@ data class PersonalDataUiState(
 class PersonalDataViewModel(
     private val repository: DataRepository = AppContainer.dataRepository
 ) : ViewModel() {
+
+    // Keeps autosave writes (insert -> update -> delete) in the order they were requested
+    private val writeMutex = Mutex()
 
     private val _currentFolderId = MutableStateFlow<String?>(null)
     private val _searchQuery = MutableStateFlow("")
@@ -147,9 +152,19 @@ class PersonalDataViewModel(
         }
     }
 
+    fun saveTextCard(card: TextCard, isNew: Boolean) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                if (isNew) repository.addTextCard(card) else repository.updateTextCard(card)
+            }
+        }
+    }
+
     fun deleteTextCard(cardId: String) {
         viewModelScope.launch {
-            repository.deleteTextCard(cardId)
+            writeMutex.withLock {
+                repository.deleteTextCard(cardId)
+            }
         }
     }
 
