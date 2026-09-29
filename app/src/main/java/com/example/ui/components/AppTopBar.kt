@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
@@ -57,6 +58,7 @@ fun AppTopBar(
     isDarkTheme: Boolean,
     onToggleLanguage: () -> Unit,
     onToggleTheme: () -> Unit,
+    onAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val syncInfo by AppContainer.syncPreferences.syncInfo.collectAsState()
@@ -162,6 +164,18 @@ fun AppTopBar(
                 )
 
                 Spacer(modifier = Modifier.width(4.dp))
+
+                // Account / sign-in button
+                IconButton(
+                    onClick = onAccountClick,
+                    modifier = Modifier.testTag("account_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = "Account",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
 
                 // Theme toggle icon
                 IconButton(
