@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.auth.LoginScreen
 import com.example.ui.components.AppTab
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.BottomNavBar
@@ -35,6 +37,7 @@ fun MainScreen(
 ) {
     var isArabic by remember { mutableStateOf(true) }
     var currentTab by remember { mutableStateOf(AppTab.TASKS) }
+    var showLogin by remember { mutableStateOf(false) }
 
     val tasksViewModel: TasksViewModel = viewModel()
     val habitsViewModel: HabitsViewModel = viewModel()
@@ -44,6 +47,16 @@ fun MainScreen(
     val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        BackHandler(enabled = showLogin) { showLogin = false }
+
+        if (showLogin) {
+            LoginScreen(
+                isArabic = isArabic,
+                onNavigateBack = { showLogin = false }
+            )
+            return@CompositionLocalProvider
+        }
+
         val screenTitle = "Life Manager"
         val subtitle = when (currentTab) {
             AppTab.TASKS -> if (isArabic) "إدارة المهام والإنتاجية اليومية" else "Daily Tasks & Productivity"
@@ -60,7 +73,8 @@ fun MainScreen(
                     isArabic = isArabic,
                     isDarkTheme = isDarkTheme,
                     onToggleLanguage = { isArabic = !isArabic },
-                    onToggleTheme = onToggleTheme
+                    onToggleTheme = onToggleTheme,
+                    onAccountClick = { showLogin = true }
                 )
             },
             bottomBar = {
