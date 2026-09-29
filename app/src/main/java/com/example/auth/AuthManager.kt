@@ -138,6 +138,9 @@ class AuthManager(private val context: Context) {
                     _authState.value = AuthState.SignedIn(authUser)
                     AppContainer.syncPreferences.setCurrentUser(authUser.uid, authUser.email)
 
+                    // Keep syncing automatically from now on (no app restart needed)
+                    com.example.sync.SyncWorker.schedulePeriodicSync(context)
+
                     // Trigger cloud sync in background with the new UID
                     try {
                         AppContainer.syncManager.sync()
