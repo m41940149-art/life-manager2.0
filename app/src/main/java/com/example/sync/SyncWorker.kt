@@ -37,6 +37,7 @@ class SyncWorker(
     companion object {
         private const val PERIODIC_SYNC_WORK_NAME = "life_manager_periodic_sync"
         private const val ONE_TIME_SYNC_WORK_NAME = "life_manager_one_time_sync"
+        private const val CHANGE_SYNC_WORK_NAME = "life_manager_change_sync"
 
         fun schedulePeriodicSync(context: Context) {
             try {
@@ -44,7 +45,7 @@ class SyncWorker(
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
 
-                val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS)
+                val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
                     .setConstraints(constraints)
                     .build()
 
@@ -70,6 +71,29 @@ class SyncWorker(
                     ONE_TIME_SYNC_WORK_NAME,
                     ExistingWorkPolicy.REPLACE,
                     oneTimeRequest
+                )
+            } catch (_: Exception) {}
+        }
+
+        /**
+         * Called after any local data change. Waits a few seconds (debounce) so a burst of
+         * edits results in a single sync instead of one sync per edit.
+         */
+        fun triggerDebouncedSync(context: Context, delaySeconds: Long = 5) {
+            try {
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+
+                val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                    .setConstraints(constraints)
+                    .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+                    .build()
+
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    CHANGE_SYNC_WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    request
                 )
             } catch (_: Exception) {}
         }
