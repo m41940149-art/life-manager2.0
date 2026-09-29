@@ -16,6 +16,14 @@ import com.example.ui.MainScreen
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        try {
+            com.example.data.AppContainer.initialize(applicationContext)
+            com.example.data.AppContainer.requestSyncOnForeground(applicationContext)
+        } catch (_: Exception) {}
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.data.AppContainer.initialize(applicationContext)
