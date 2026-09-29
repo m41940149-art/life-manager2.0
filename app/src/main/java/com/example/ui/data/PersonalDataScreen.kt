@@ -36,6 +36,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,9 +61,7 @@ fun PersonalDataScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
-    var showAddCardSheet by remember { mutableStateOf(false) }
-    var selectedCardToView by remember { mutableStateOf<TextCard?>(null) }
-    var cardToEdit by remember { mutableStateOf<TextCard?>(null) }
+    var editorRequest by remember { mutableStateOf<EditorRequest?>(null) }
     var cardToMove by remember { mutableStateOf<TextCard?>(null) }
     var cardToDelete by remember { mutableStateOf<TextCard?>(null) }
     var folderToRename by remember { mutableStateOf<Folder?>(null) }
@@ -101,10 +100,7 @@ fun PersonalDataScreen(
                 }
 
                 FloatingActionButton(
-                    onClick = {
-                        cardToEdit = null
-                        showAddCardSheet = true
-                    },
+                    onClick = { editorRequest = EditorRequest(card = null) },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shape = CircleShape,
@@ -221,10 +217,7 @@ fun PersonalDataScreen(
                             title = emptyTitle,
                             subtitle = emptySubtitle,
                             actionButtonText = if (uiState.searchQuery.isBlank()) (if (isArabic) "+ إضافة بطاقة نصية" else "+ Add Text Card") else null,
-                            onActionClick = {
-                                cardToEdit = null
-                                showAddCardSheet = true
-                            }
+                            onActionClick = { editorRequest = EditorRequest(card = null) }
                         )
                     }
                 } else {
@@ -232,12 +225,9 @@ fun PersonalDataScreen(
                         TextDataCard(
                             card = card,
                             isArabic = isArabic,
-                            onClick = { selectedCardToView = card },
+                            onClick = { editorRequest = EditorRequest(card = card) },
                             onToggleFavorite = { viewModel.toggleFavorite(card.id) },
-                            onEdit = {
-                                cardToEdit = card
-                                showAddCardSheet = true
-                            },
+                            onEdit = { editorRequest = EditorRequest(card = card) },
                             onMove = { cardToMove = card },
                             onDelete = { cardToDelete = card }
                         )
@@ -368,55 +358,25 @@ fun PersonalDataScreen(
             )
         }
 
-        // Sheet: Add or Edit Card
-        if (showAddCardSheet) {
-            AddTextCardBottomSheet(
-                folders = uiState.folders,
-                initialFolderId = uiState.currentFolder?.id,
-                cardToEdit = cardToEdit,
-                isArabic = isArabic,
-                onDismiss = {
-                    showAddCardSheet = false
-                    cardToEdit = null
-                },
-                onSaveCard = { title, content, folderId, isFavorite, isPasswordProtected, passwordHash, tags ->
-                    if (cardToEdit != null) {
-                        viewModel.updateTextCard(
-                            cardToEdit!!.copy(
-                                title = title,
-                                content = content,
-                                folderId = folderId,
-                                isFavorite = isFavorite,
-                                isPasswordProtected = isPasswordProtected,
-                                passwordHash = passwordHash,
-                                tags = tags,
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        )
-                    } else {
-                        viewModel.addTextCard(
-                            title = title,
-                            content = content,
-                            folderId = folderId,
-                            isFavorite = isFavorite,
-                            isPasswordProtected = isPasswordProtected,
-                            passwordHash = passwordHash,
-                            tags = tags
-                        )
-                    }
-                }
-            )
-        }
-
-        // Dialog: View Card Details
-        selectedCardToView?.let { card ->
-            val folder = uiState.folders.find { it.id == card.folderId }
-            ViewTextCardDialog(
-                card = card,
-                folder = folder,
-                isArabic = isArabic,
-                onDismiss = { selectedCardToView = null }
-            )
+        // Full-screen editor (create + view + edit, autosaves)
+        editorRequest?.let { request ->
+            key(request.key) {
+                CardEditorDialog(
+                    card = request.card,
+                    initialFolderId = uiState.currentFolder?.id,
+                    folders = uiState.folders,
+                    isArabic = isArabic,
+                    onSave = { card, isNew -> viewModel.saveTextCard(card, isNew) },
+                    onDelete = { id -> viewModel.deleteTextCard(id) },
+                    onClose = { editorRequest = null }
+                )
+            }
         }
     }
 }
+
+/** Identifies one editor session; [key] makes every opening start from a clean state. */
+private data class EditorRequest(
+    val card: TextCard?,
+    val key: Long = System.nanoTime()
+)
