@@ -1,6 +1,7 @@
 package com.example.data
 
 import android.content.Context
+import androidx.room.InvalidationTracker
 import com.example.auth.AuthManager
 import com.example.data.local.LifeManagerDatabase
 import com.example.sync.FirestoreSyncManager
@@ -70,6 +71,29 @@ object AppContainer {
                     _syncManager = FirestoreSyncManager(context.applicationContext, db, prefs)
                     _authManager = AuthManager(context.applicationContext)
 
+                    // Auto-sync: any local write (tasks, habits, notes, surveys, deletions)
+                    // schedules a debounced background sync.
+                    val appContext = context.applicationContext
+                    db.invalidationTracker.addObserver(
+                        object : InvalidationTracker.Observer(
+                            arrayOf(
+                                "tasks", "habits", "habit_completions", "habit_missed_resolutions",
+                                "folders", "text_cards", "surveys", "survey_questions",
+                                "survey_responses", "survey_answers", "sync_tombstones"
+                            )
+                        ) {
+                            override fun onInvalidated(tables: Set<String>) {
+                                val auth = _authManager ?: return
+                                val sync = _syncManager ?: return
+                                if (!auth.isUserSignedIn) return
+                                // Ignore the writes the sync itself makes while pulling data
+                                if (sync.isSyncing) return
+                                if (System.currentTimeMillis() - sync.lastFinishedAt < 2_000L) return
+                                SyncWorker.triggerDebouncedSync(appContext)
+                            }
+                        }
+                    )
+
                     // If user is already signed in at startup, schedule periodic background sync
                     if (_authManager?.isUserSignedIn == true) {
                         SyncWorker.schedulePeriodicSync(context.applicationContext)
@@ -81,5 +105,14 @@ object AppContainer {
                 }
             }
         }
+    }
+
+    /** Sync now when the app comes to the foreground (pulls changes made on other devices). */
+    fun requestSyncOnForeground(context: Context) {
+        val auth = _authManager ?: return
+        val sync = _syncManager ?: return
+        if (!auth.isUserSignedIn || sync.isSyncing) return
+        if (System.currentTimeMillis() - sync.lastFinishedAt < 30_000L) return
+        SyncWorker.triggerImmediateSync(context.applicationContext)
     }
 }
