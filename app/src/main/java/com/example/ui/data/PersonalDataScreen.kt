@@ -1,10 +1,13 @@
 package com.example.ui.data
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,18 +16,15 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +40,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -61,6 +60,7 @@ fun PersonalDataScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var fabExpanded by remember { mutableStateOf(false) }
     var editorRequest by remember { mutableStateOf<EditorRequest?>(null) }
     var cardToMove by remember { mutableStateOf<TextCard?>(null) }
     var cardToDelete by remember { mutableStateOf<TextCard?>(null) }
@@ -71,50 +71,26 @@ fun PersonalDataScreen(
     BackHandler(enabled = uiState.currentFolder != null) {
         viewModel.navigateBackToRoot()
     }
+    // Registered last, so it wins: Back first collapses the "+" menu
+    BackHandler(enabled = fabExpanded) { fabExpanded = false }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            // Temporary: replaced by a single expanding "+" in Stage 3
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (uiState.currentFolder == null && !uiState.showOnlyFavorites) {
-                    FloatingActionButton(
-                        onClick = { showAddFolderDialog = true },
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("add_folder_fab")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CreateNewFolder,
-                            contentDescription = if (isArabic) "إضافة مجلد" else "Add Folder",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+            ExpandableAddFab(
+                expanded = fabExpanded,
+                onToggle = { fabExpanded = !fabExpanded },
+                isArabic = isArabic,
+                onAddCard = {
+                    fabExpanded = false
+                    editorRequest = EditorRequest(card = null)
+                },
+                onAddFolder = {
+                    fabExpanded = false
+                    showAddFolderDialog = true
                 }
-
-                FloatingActionButton(
-                    onClick = { editorRequest = EditorRequest(card = null) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .testTag("add_card_fab")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.NoteAdd,
-                        contentDescription = if (isArabic) "إضافة بطاقة" else "Add Card",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
+            )
         }
     ) { innerPadding ->
         Column(
@@ -182,7 +158,6 @@ fun PersonalDataScreen(
                     viewModel.setShowOnlyFavorites(true)
                 },
                 onSelectFolder = { viewModel.openFolder(it.id) },
-                onNewFolder = { showAddFolderDialog = true },
                 onRenameFolder = { folderToRename = it },
                 onDeleteFolder = { folderToDelete = it }
             )
@@ -234,6 +209,19 @@ fun PersonalDataScreen(
                     }
                 }
             }
+        }
+
+        // Scrim behind the expanded "+" menu: tap anywhere to collapse
+        if (fabExpanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { fabExpanded = false }
+            )
         }
 
         // Dialog: Add Folder
