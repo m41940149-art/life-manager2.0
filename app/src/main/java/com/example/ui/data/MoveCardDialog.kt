@@ -44,7 +44,8 @@ fun MoveCardDialog(
     folders: List<Folder>,
     isArabic: Boolean,
     onDismiss: () -> Unit,
-    onMove: (newFolderId: String?) -> Unit
+    onMove: (newFolderId: String?) -> Unit,
+    selectedCount: Int = 1
 ) {
     var selectedFolderId by remember { mutableStateOf(card.folderId) }
 
@@ -59,7 +60,11 @@ fun MoveCardDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = if (isArabic) "اختر المجلد الذي تريد نقل البطاقة \"${card.title}\" إليه:" else "Select target folder for \"${card.title}\":",
+                    text = if (selectedCount > 1) {
+                        if (isArabic) "اختر المجلد الذي تريد نقل $selectedCount بطاقات إليه:" else "Select target folder for $selectedCount cards:"
+                    } else {
+                        if (isArabic) "اختر المجلد الذي تريد نقل البطاقة \"${card.title}\" إليه:" else "Select target folder for \"${card.title}\":"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
