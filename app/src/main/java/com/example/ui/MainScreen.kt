@@ -5,6 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,25 +58,22 @@ fun MainScreen(
             return@CompositionLocalProvider
         }
 
-        val screenTitle = "Life Manager"
-        val subtitle = when (currentTab) {
-            AppTab.TASKS -> if (isArabic) "إدارة المهام والإنتاجية اليومية" else "Daily Tasks & Productivity"
-            AppTab.HABITS -> if (isArabic) "بناء العادات ومتابعة السلاسل" else "Habit Tracking & Streaks"
-            AppTab.DATA -> if (isArabic) "حفظ البيانات والملاحظات الآمنة" else "Personal Data & Protected Notes"
-            AppTab.SURVEYS -> if (isArabic) "الاستبيانات الدورية والتقييم الذاتي" else "Periodic Surveys & Self-Review"
-        }
+        // The app bar (language / theme / account) lives on the Home tab only.
+        val isHome = currentTab == AppTab.TASKS
 
         Scaffold(
             topBar = {
-                AppTopBar(
-                    title = screenTitle,
-                    subtitle = subtitle,
-                    isArabic = isArabic,
-                    isDarkTheme = isDarkTheme,
-                    onToggleLanguage = { isArabic = !isArabic },
-                    onToggleTheme = onToggleTheme,
-                    onAccountClick = { showLogin = true }
-                )
+                if (isHome) {
+                    AppTopBar(
+                        title = "Life Manager",
+                        subtitle = if (isArabic) "إدارة المهام والإنتاجية اليومية" else "Daily Tasks & Productivity",
+                        isArabic = isArabic,
+                        isDarkTheme = isDarkTheme,
+                        onToggleLanguage = { isArabic = !isArabic },
+                        onToggleTheme = onToggleTheme,
+                        onAccountClick = { showLogin = true }
+                    )
+                }
             },
             bottomBar = {
                 BottomNavBar(
@@ -90,6 +88,8 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    // Without the app bar, keep content clear of the status bar
+                    .then(if (isHome) Modifier else Modifier.statusBarsPadding())
             ) {
                 Crossfade(
                     targetState = currentTab,
