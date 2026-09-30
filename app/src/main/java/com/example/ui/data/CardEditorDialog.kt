@@ -105,6 +105,7 @@ fun CardEditorDialog(
     isArabic: Boolean,
     onSave: (card: TextCard, isNew: Boolean) -> Unit,
     onDelete: (cardId: String) -> Unit,
+    onDeleteWithUndo: (card: TextCard) -> Unit,
     onClose: () -> Unit
 ) {
     val base = remember { card ?: TextCard(title = "", content = "", folderId = initialFolderId) }
@@ -124,7 +125,6 @@ fun CardEditorDialog(
 
     var showMove by remember { mutableStateOf(false) }
     var showLockDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
 
     fun snapshot() = EditorSnapshot(
@@ -181,6 +181,25 @@ fun CardEditorDialog(
         } else {
             currentFlush()
         }
+        onClose()
+    }
+
+    // Delete from the menu: no confirmation, the list screen offers "Undo" instead
+    val requestDelete: () -> Unit = {
+        currentFlush()
+        deleted = true
+        val snap = snapshot()
+        onDeleteWithUndo(
+            base.copy(
+                title = snap.title,
+                content = snap.content,
+                tags = snap.tags,
+                folderId = snap.folderId,
+                isFavorite = snap.isFavorite,
+                isPasswordProtected = snap.isProtected,
+                passwordHash = snap.passwordHash
+            )
+        )
         onClose()
     }
 
@@ -297,7 +316,7 @@ fun CardEditorDialog(
                                         },
                                         onClick = {
                                             menuExpanded = false
-                                            showDeleteConfirm = true
+                                            requestDelete()
                                         }
                                     )
                                 }
@@ -454,44 +473,6 @@ fun CardEditorDialog(
                 isProtected = false
                 showLockDialog = false
             }
-        )
-    }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = {
-                Text(
-                    if (isArabic) "حذف البطاقة" else "Delete Card",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Text(
-                    if (isArabic) "هل أنت متأكد من حذف هذه البطاقة؟ لا يمكن التراجع عن هذا الإجراء."
-                    else "Are you sure you want to delete this card? This action cannot be undone."
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        deleted = true
-                        showDeleteConfirm = false
-                        onDelete(base.id)
-                        onClose()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.testTag("confirm_delete_card_btn")
-                ) {
-                    Text(if (isArabic) "حذف" else "Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(if (isArabic) "إلغاء" else "Cancel")
-                }
-            },
-            shape = RoundedCornerShape(20.dp)
         )
     }
 }
