@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "589960343126",
+    "project_id": "life-manager-fa940",
+    "storage_bucket": "life-manager-fa940.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:589960343126:android:032981158f1adf70b115f7",
+        "android_client_info": {
+          "package_name": "com.aistudio.itqan.prmvbx"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "589960343126-oa8jah97f5r20i44dcd860cvlcetetbj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.itqan.prmvbx",
+            "certificate_hash": "9eb1e1d3741e18e900704e751365fc000118396c"
+          }
+        },
+        {
+          "client_id": "589960343126-77ub7mt2d1cfg9nu5f6e7lh9a0so30ie.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDAGg9hScJ_kFUX07l28KY2Ce91FSq9oM8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "589960343126-77ub7mt2d1cfg9nu5f6e7lh9a0so30ie.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
