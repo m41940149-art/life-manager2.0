@@ -248,7 +248,7 @@ fun SyncStatusDialog(
             Button(
                 onClick = {
                     coroutineScope.launch {
-                        AppContainer.syncManager.sync()
+                        AppContainer.syncManager.sync(forcePull = true)
                     }
                 },
                 enabled = !isSyncing,
