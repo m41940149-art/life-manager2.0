@@ -92,4 +92,21 @@ interface SurveyDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertResponses(responses: List<SurveyResponseEntity>)
+
+    // --- Reactive queries (so the UI refreshes when questions/answers change) ---
+    @Query("SELECT * FROM survey_questions ORDER BY questionOrder ASC")
+    fun getAllQuestionsFlow(): Flow<List<SurveyQuestionEntity>>
+
+    @Query(
+        "SELECT a.* FROM survey_answers a " +
+        "INNER JOIN survey_responses r ON a.responseId = r.id " +
+        "WHERE r.surveyId = :surveyId"
+    )
+    fun getAnswersForSurveyFlow(surveyId: String): Flow<List<SurveyAnswerEntity>>
+
+    @Query("DELETE FROM survey_answers WHERE id IN (:ids)")
+    suspend fun deleteAnswersByIds(ids: List<String>)
+
+    @Query("DELETE FROM survey_answers WHERE responseId IN (SELECT id FROM survey_responses WHERE surveyId = :surveyId)")
+    suspend fun deleteAnswersForSurvey(surveyId: String)
 }
