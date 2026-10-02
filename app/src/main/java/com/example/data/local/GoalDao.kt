@@ -47,4 +47,30 @@ interface GoalDao {
 
     @Query("DELETE FROM goal_plans WHERE id = :planId")
     suspend fun deletePlan(planId: String)
+
+    // ---- Sync helpers (one-shot reads used by FirestoreSyncManager and the repository) ----
+
+    @Query("SELECT * FROM goal_plans")
+    suspend fun getAllPlansSync(): List<GoalPlanEntity>
+
+    @Query("SELECT * FROM goal_tasks")
+    suspend fun getAllTasksSync(): List<GoalTaskEntity>
+
+    @Query("SELECT * FROM goal_checks")
+    suspend fun getAllChecksSync(): List<GoalCheckEntity>
+
+    @Query("SELECT * FROM goal_plans WHERE id = :id LIMIT 1")
+    suspend fun getPlanById(id: String): GoalPlanEntity?
+
+    @Query("SELECT * FROM goal_tasks WHERE id = :id LIMIT 1")
+    suspend fun getTaskById(id: String): GoalTaskEntity?
+
+    @Query("SELECT * FROM goal_tasks WHERE planId = :planId")
+    suspend fun getTasksForPlanSync(planId: String): List<GoalTaskEntity>
+
+    @Query("SELECT * FROM goal_checks WHERE taskId = :taskId")
+    suspend fun getChecksForTaskSync(taskId: String): List<GoalCheckEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChecks(checks: List<GoalCheckEntity>)
 }
