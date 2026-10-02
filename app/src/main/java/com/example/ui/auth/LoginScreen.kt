@@ -573,7 +573,7 @@ private fun SignedInContent(
             onClick = {
                 coroutineScope.launch {
                     isManualSyncing = true
-                    AppContainer.syncManager.sync()
+                    AppContainer.syncManager.sync(forcePull = true)
                     isManualSyncing = false
                 }
             },
