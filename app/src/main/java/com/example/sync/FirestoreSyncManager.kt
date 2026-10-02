@@ -2,6 +2,9 @@ package com.example.sync
 
 import android.content.Context
 import com.example.data.local.FolderEntity
+import com.example.data.local.GoalCheckEntity
+import com.example.data.local.GoalPlanEntity
+import com.example.data.local.GoalTaskEntity
 import com.example.data.local.HabitCompletionEntity
 import com.example.data.local.HabitEntity
 import com.example.data.local.HabitMissedResolutionEntity
@@ -71,6 +74,18 @@ class FirestoreSyncManager(
     ): RemoteDocs {
         if (!pullThisSync) return RemoteDocs(emptyList())
         return RemoteDocs(col.get().await().documents)
+    }
+
+    /**
+     * Reads a whole collection straight from the server (never from the local cache), or returns
+     * null when no pull is due. Used for goals, where a missing remote document means "deleted on
+     * another device" - so a partial cache must never be mistaken for the full cloud state.
+     */
+    private suspend fun fetchRemoteFromServer(
+        col: com.google.firebase.firestore.CollectionReference
+    ): List<com.google.firebase.firestore.DocumentSnapshot>? {
+        if (!pullThisSync) return null
+        return col.get(com.google.firebase.firestore.Source.SERVER).await().documents
     }
 
     private class RemoteDocs(val documents: List<com.google.firebase.firestore.DocumentSnapshot>)
@@ -188,6 +203,11 @@ class FirestoreSyncManager(
             syncSurveyResponses(userDoc)
             syncSurveyAnswers(userDoc)
 
+            // 6. Sync Goals (Plans, weekly Tasks, daily Checks)
+            syncGoalPlans(userDoc)
+            syncGoalTasks(userDoc)
+            syncGoalChecks(userDoc)
+
             if (pullThisSync) hashPrefs.edit().putLong("__last_pull_at", System.currentTimeMillis()).apply()
             syncPreferences.updateSyncState(
                 SyncState.SYNCED,
@@ -222,6 +242,9 @@ class FirestoreSyncManager(
                     "SURVEY_RESPONSE" -> userDoc.collection("survey_responses").document(t.entityId).delete().await()
                     "SURVEY_QUESTION" -> userDoc.collection("survey_questions").document(t.entityId).delete().await()
                     "SURVEY_ANSWER" -> userDoc.collection("survey_answers").document(t.entityId).delete().await()
+                    "GOAL_PLAN" -> userDoc.collection("goal_plans").document(t.entityId).delete().await()
+                    "GOAL_TASK" -> userDoc.collection("goal_tasks").document(t.entityId).delete().await()
+                    "GOAL_CHECK" -> userDoc.collection("goal_checks").document("${t.entityId}__${t.extraId}").delete().await()
                 }
                 database.syncTombstoneDao().deleteTombstone(t.id)
             } catch (_: Exception) {}
@@ -688,6 +711,160 @@ class FirestoreSyncManager(
         }
         if (answersToInsert.isNotEmpty()) {
             database.surveyDao().insertAnswers(answersToInsert)
+        }
+    }
+
+
+    // ------------------------------------------------------------------ Goals
+
+    private suspend fun syncGoalPlans(userDoc: com.google.firebase.firestore.DocumentReference) {
+        val col = userDoc.collection("goal_plans")
+        val dao = database.goalDao()
+
+        for (p in dao.getAllPlansSync()) {
+            pushIfChanged(
+                col.document(p.id),
+                hashMapOf<String, Any?>(
+                    "id" to p.id,
+                    "title" to p.title,
+                    "totalWeeks" to p.totalWeeks,
+                    "startDate" to p.startDate,
+                    "createdAt" to p.createdAt,
+                    "updatedAt" to p.updatedAt
+                )
+            )
+        }
+
+        val remote = fetchRemoteFromServer(col) ?: return
+        val remoteIds = HashSet<String>()
+        for (doc in remote) {
+            val id = doc.getString("id") ?: doc.id
+            remoteIds.add(id)
+            val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
+            val local = dao.getPlanById(id)
+            if (local == null || remoteUpdatedAt > local.updatedAt) {
+                dao.insertPlan(
+                    GoalPlanEntity(
+                        id = id,
+                        title = doc.getString("title") ?: local?.title ?: "",
+                        totalWeeks = (doc.getLong("totalWeeks")?.toInt() ?: local?.totalWeeks ?: 1).coerceIn(1, 52),
+                        startDate = doc.getLong("startDate") ?: local?.startDate ?: System.currentTimeMillis(),
+                        createdAt = doc.getLong("createdAt") ?: local?.createdAt ?: System.currentTimeMillis(),
+                        updatedAt = remoteUpdatedAt
+                    )
+                )
+            }
+        }
+
+        // Plans deleted on another device: remove them here too (with their tasks and checks).
+        // Everything local was pushed above, so a plan missing from the cloud was deleted there.
+        for (local in dao.getAllPlansSync()) {
+            if (local.id !in remoteIds) {
+                dao.deleteChecksForPlan(local.id)
+                dao.deleteTasksForPlan(local.id)
+                dao.deletePlan(local.id)
+            }
+        }
+    }
+
+    private suspend fun syncGoalTasks(userDoc: com.google.firebase.firestore.DocumentReference) {
+        val col = userDoc.collection("goal_tasks")
+        val dao = database.goalDao()
+
+        for (t in dao.getAllTasksSync()) {
+            pushIfChanged(
+                col.document(t.id),
+                hashMapOf<String, Any?>(
+                    "id" to t.id,
+                    "planId" to t.planId,
+                    "weekNumber" to t.weekNumber,
+                    "title" to t.title,
+                    "days" to t.days,
+                    "createdAt" to t.createdAt
+                )
+            )
+        }
+
+        val remote = fetchRemoteFromServer(col) ?: return
+        val remoteIds = HashSet<String>()
+        for (doc in remote) {
+            val id = doc.getString("id") ?: doc.id
+            val planId = doc.getString("planId") ?: continue
+            // Orphan (its plan no longer exists): don't resurrect it, clean it from the cloud
+            if (dao.getPlanById(planId) == null) {
+                database.syncTombstoneDao().insertTombstone(
+                    com.example.data.local.SyncTombstoneEntity(entityType = "GOAL_TASK", entityId = id)
+                )
+                continue
+            }
+            remoteIds.add(id)
+            if (dao.getTaskById(id) == null) {
+                dao.insertTasks(
+                    listOf(
+                        GoalTaskEntity(
+                            id = id,
+                            planId = planId,
+                            weekNumber = doc.getLong("weekNumber")?.toInt() ?: 1,
+                            title = doc.getString("title") ?: "",
+                            days = doc.getString("days") ?: "",
+                            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                        )
+                    )
+                )
+            }
+        }
+
+        // Tasks deleted on another device
+        for (local in dao.getAllTasksSync()) {
+            if (local.id !in remoteIds) {
+                dao.deleteChecksForTask(local.id)
+                dao.deleteTask(local.id)
+            }
+        }
+    }
+
+    private suspend fun syncGoalChecks(userDoc: com.google.firebase.firestore.DocumentReference) {
+        val col = userDoc.collection("goal_checks")
+        val dao = database.goalDao()
+
+        for (c in dao.getAllChecksSync()) {
+            pushIfChanged(
+                col.document("${c.taskId}__${c.dayOffset}"),
+                hashMapOf<String, Any?>(
+                    "taskId" to c.taskId,
+                    "dayOffset" to c.dayOffset,
+                    "completedAt" to c.completedAt
+                )
+            )
+        }
+
+        val remote = fetchRemoteFromServer(col) ?: return
+        val remoteKeys = HashSet<String>()
+        val toInsert = mutableListOf<GoalCheckEntity>()
+        for (doc in remote) {
+            val taskId = doc.getString("taskId") ?: continue
+            val dayOffset = doc.getLong("dayOffset")?.toInt() ?: continue
+            // Orphan (its task no longer exists): don't resurrect it, clean it from the cloud
+            if (dao.getTaskById(taskId) == null) {
+                database.syncTombstoneDao().insertTombstone(
+                    com.example.data.local.SyncTombstoneEntity(
+                        entityType = "GOAL_CHECK", entityId = taskId, extraId = dayOffset.toString()
+                    )
+                )
+                continue
+            }
+            remoteKeys.add("$taskId|$dayOffset")
+            if (!dao.isChecked(taskId, dayOffset)) {
+                toInsert.add(GoalCheckEntity(taskId, dayOffset, doc.getLong("completedAt") ?: System.currentTimeMillis()))
+            }
+        }
+        if (toInsert.isNotEmpty()) dao.insertChecks(toInsert)
+
+        // Checks that were un-ticked on another device
+        for (local in dao.getAllChecksSync()) {
+            if ("${local.taskId}|${local.dayOffset}" !in remoteKeys) {
+                dao.deleteCheck(local.taskId, local.dayOffset)
+            }
         }
     }
 
