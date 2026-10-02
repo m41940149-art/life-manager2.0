@@ -143,7 +143,7 @@ class AuthManager(private val context: Context) {
 
                     // Trigger cloud sync in background with the new UID
                     try {
-                        AppContainer.syncManager.sync()
+                        AppContainer.syncManager.sync(forcePull = true)
                     } catch (_: Exception) {}
 
                     Result.success(authUser)
