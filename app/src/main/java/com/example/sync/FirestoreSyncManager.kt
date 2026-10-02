@@ -46,6 +46,40 @@ class FirestoreSyncManager(
 
     private val syncMutex = Mutex()
 
+    // ---- Quota savers (Firestore free plan: 20K writes/day, 50K reads/day) ----
+    private val hashPrefs by lazy {
+        context.getSharedPreferences("life_manager_push_hashes", Context.MODE_PRIVATE)
+    }
+    private var pullThisSync = true
+
+    private fun lastPullAt(): Long = hashPrefs.getLong("__last_pull_at", 0L)
+
+    /** Writes the document only if its content changed since the last successful push. */
+    private suspend fun pushIfChanged(
+        ref: com.google.firebase.firestore.DocumentReference,
+        map: Map<String, Any?>
+    ) {
+        val hash = map.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }.hashCode().toString()
+        if (hashPrefs.getString(ref.path, null) == hash) return
+        ref.set(map, SetOptions.merge()).await()
+        hashPrefs.edit().putString(ref.path, hash).apply()
+    }
+
+    /** Reads a whole collection only when a pull is due; otherwise returns nothing (0 reads). */
+    private suspend fun fetchRemote(
+        col: com.google.firebase.firestore.CollectionReference
+    ): RemoteDocs {
+        if (!pullThisSync) return RemoteDocs(emptyList())
+        return RemoteDocs(col.get().await().documents)
+    }
+
+    private class RemoteDocs(val documents: List<com.google.firebase.firestore.DocumentSnapshot>)
+
+    /** Forget what was pushed so the next sync re-uploads everything. */
+    fun resetPushCache() {
+        hashPrefs.edit().clear().apply()
+    }
+
     /** True while a sync is running. */
     val isSyncing: Boolean
         get() = syncMutex.isLocked
@@ -56,8 +90,11 @@ class FirestoreSyncManager(
         private set
 
     /** Only one sync runs at a time; a second caller waits for the first to finish. */
-    suspend fun sync(): SyncResult = syncMutex.withLock {
+    suspend fun sync(forcePull: Boolean = false): SyncResult = syncMutex.withLock {
         try {
+            pullThisSync = forcePull ||
+                lastPullAt() == 0L ||
+                System.currentTimeMillis() - lastPullAt() > PULL_INTERVAL_MS
             performSync()
         } finally {
             lastFinishedAt = System.currentTimeMillis()
@@ -151,6 +188,7 @@ class FirestoreSyncManager(
             syncSurveyResponses(userDoc)
             syncSurveyAnswers(userDoc)
 
+            if (pullThisSync) hashPrefs.edit().putLong("__last_pull_at", System.currentTimeMillis()).apply()
             syncPreferences.updateSyncState(
                 SyncState.SYNCED,
                 isConfigured = true,
@@ -182,6 +220,8 @@ class FirestoreSyncManager(
                     "TEXT_CARD" -> userDoc.collection("text_cards").document(t.entityId).delete().await()
                     "SURVEY" -> userDoc.collection("surveys").document(t.entityId).delete().await()
                     "SURVEY_RESPONSE" -> userDoc.collection("survey_responses").document(t.entityId).delete().await()
+                    "SURVEY_QUESTION" -> userDoc.collection("survey_questions").document(t.entityId).delete().await()
+                    "SURVEY_ANSWER" -> userDoc.collection("survey_answers").document(t.entityId).delete().await()
                 }
                 database.syncTombstoneDao().deleteTombstone(t.id)
             } catch (_: Exception) {}
@@ -207,11 +247,11 @@ class FirestoreSyncManager(
                 "priority" to task.priority,
                 "category" to task.category
             )
-            tasksCol.document(task.id).set(taskMap, SetOptions.merge()).await()
+            pushIfChanged(tasksCol.document(task.id), taskMap)
         }
 
         // Pull remote tasks
-        val remoteTasks = tasksCol.get().await()
+        val remoteTasks = fetchRemote(tasksCol)
         for (doc in remoteTasks.documents) {
             val id = doc.getString("id") ?: doc.id
             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
@@ -269,11 +309,11 @@ class FirestoreSyncManager(
                 "colorHex" to h.colorHex,
                 "categoryIcon" to h.categoryIcon
             )
-            habitsCol.document(h.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(habitsCol.document(h.id), map)
         }
 
         // Pull remote habits
-        val remoteHabits = habitsCol.get().await()
+        val remoteHabits = fetchRemote(habitsCol)
         for (doc in remoteHabits.documents) {
             val id = doc.getString("id") ?: doc.id
             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
@@ -323,10 +363,10 @@ class FirestoreSyncManager(
                 "dateTimestamp" to c.dateTimestamp,
                 "completedAt" to c.completedAt
             )
-            col.document(docId).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(docId), map)
         }
 
-        val remoteCompletions = col.get().await()
+        val remoteCompletions = fetchRemote(col)
         for (doc in remoteCompletions.documents) {
             val habitId = doc.getString("habitId") ?: continue
             val dateTimestamp = doc.getLong("dateTimestamp") ?: continue
@@ -355,10 +395,10 @@ class FirestoreSyncManager(
                 "resolution" to r.resolution,
                 "resolvedAt" to r.resolvedAt
             )
-            col.document(docId).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(docId), map)
         }
 
-        val remoteResolutions = col.get().await()
+        val remoteResolutions = fetchRemote(col)
         for (doc in remoteResolutions.documents) {
             val habitId = doc.getString("habitId") ?: continue
             val dateTimestamp = doc.getLong("dateTimestamp") ?: continue
@@ -389,10 +429,10 @@ class FirestoreSyncManager(
                 "createdAt" to f.createdAt,
                 "updatedAt" to f.updatedAt
             )
-            col.document(f.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(f.id), map)
         }
 
-        val remoteFolders = col.get().await()
+        val remoteFolders = fetchRemote(col)
         for (doc in remoteFolders.documents) {
             val id = doc.getString("id") ?: doc.id
             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
@@ -440,10 +480,10 @@ class FirestoreSyncManager(
                 "createdAt" to c.createdAt,
                 "updatedAt" to c.updatedAt
             )
-            col.document(c.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(c.id), map)
         }
 
-        val remoteCards = col.get().await()
+        val remoteCards = fetchRemote(col)
         for (doc in remoteCards.documents) {
             val id = doc.getString("id") ?: doc.id
             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
@@ -491,10 +531,10 @@ class FirestoreSyncManager(
                 "createdAt" to s.createdAt,
                 "updatedAt" to s.updatedAt
             )
-            col.document(s.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(s.id), map)
         }
 
-        val remoteSurveys = col.get().await()
+        val remoteSurveys = fetchRemote(col)
         for (doc in remoteSurveys.documents) {
             val id = doc.getString("id") ?: doc.id
             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
@@ -524,10 +564,10 @@ class FirestoreSyncManager(
                 "questionOrder" to q.questionOrder,
                 "questionText" to q.questionText
             )
-            col.document(q.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(q.id), map)
         }
 
-        val remoteQuestions = col.get().await()
+        val remoteQuestions = fetchRemote(col)
         val questionsToInsert = mutableListOf<SurveyQuestionEntity>()
         for (doc in remoteQuestions.documents) {
             val id = doc.getString("id") ?: doc.id
@@ -561,10 +601,10 @@ class FirestoreSyncManager(
                 "createdAt" to r.createdAt,
                 "updatedAt" to r.updatedAt
             )
-            col.document(r.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(r.id), map)
         }
 
-        val remoteResponses = col.get().await()
+        val remoteResponses = fetchRemote(col)
         for (doc in remoteResponses.documents) {
             val id = doc.getString("id") ?: doc.id
             val surveyId = doc.getString("surveyId") ?: continue
@@ -607,16 +647,36 @@ class FirestoreSyncManager(
                 "questionId" to a.questionId,
                 "answerText" to a.answerText
             )
-            col.document(a.id).set(map, SetOptions.merge()).await()
+            pushIfChanged(col.document(a.id), map)
         }
 
-        val remoteAnswers = col.get().await()
+        val remoteAnswers = fetchRemote(col)
         val answersToInsert = mutableListOf<SurveyAnswerEntity>()
+        // (responseId|questionId) -> id of the answer we already keep
+        val owners = HashMap<String, String>()
+        localAnswers.forEach { owners["${it.responseId}|${it.questionId}"] = it.id }
         for (doc in remoteAnswers.documents) {
             val id = doc.getString("id") ?: doc.id
             val responseId = doc.getString("responseId") ?: continue
             val questionId = doc.getString("questionId") ?: continue
             val answerText = doc.getString("answerText") ?: ""
+            // Skip answers whose response no longer exists (deleted) - don't resurrect them
+            if (database.surveyDao().getResponseById(responseId) == null) {
+                database.syncTombstoneDao().insertTombstone(
+                    com.example.data.local.SyncTombstoneEntity(entityType = "SURVEY_ANSWER", entityId = id)
+                )
+                continue
+            }
+            // Old duplicate answers for the same question: keep one, delete the stale cloud copy
+            val key = "$responseId|$questionId"
+            val owner = owners[key]
+            if (owner != null && owner != id) {
+                database.syncTombstoneDao().insertTombstone(
+                    com.example.data.local.SyncTombstoneEntity(entityType = "SURVEY_ANSWER", entityId = id)
+                )
+                continue
+            }
+            owners[key] = id
             answersToInsert.add(
                 SurveyAnswerEntity(
                     id = id,
@@ -629,5 +689,10 @@ class FirestoreSyncManager(
         if (answersToInsert.isNotEmpty()) {
             database.surveyDao().insertAnswers(answersToInsert)
         }
+    }
+
+    companion object {
+        /** Full pull from the cloud at most this often (unless the user taps Sync manually). */
+        private const val PULL_INTERVAL_MS = 6 * 60 * 60 * 1000L
     }
 }
