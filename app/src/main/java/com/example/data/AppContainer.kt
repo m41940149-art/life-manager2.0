@@ -71,7 +71,7 @@ object AppContainer {
                     _habitRepository = RoomHabitRepository(db.habitDao(), context.applicationContext, tombstoneDao)
                     _dataRepository = RoomDataRepository(db.folderDao(), db.textCardDao(), tombstoneDao)
                     _surveyRepository = RoomSurveyRepository(db.surveyDao(), tombstoneDao)
-                    _goalRepository = RoomGoalRepository(db.goalDao())
+                    _goalRepository = RoomGoalRepository(db.goalDao(), tombstoneDao)
 
                     val prefs = SyncPreferences(context.applicationContext)
                     _syncPreferences = prefs
@@ -86,7 +86,8 @@ object AppContainer {
                             arrayOf(
                                 "tasks", "habits", "habit_completions", "habit_missed_resolutions",
                                 "folders", "text_cards", "surveys", "survey_questions",
-                                "survey_responses", "survey_answers", "sync_tombstones"
+                                "survey_responses", "survey_answers", "sync_tombstones",
+                                "goal_plans", "goal_tasks", "goal_checks"
                             )
                         ) {
                             override fun onInvalidated(tables: Set<String>) {
