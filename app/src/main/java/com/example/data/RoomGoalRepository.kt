@@ -4,6 +4,8 @@ import com.example.data.local.GoalCheckEntity
 import com.example.data.local.GoalDao
 import com.example.data.local.GoalPlanEntity
 import com.example.data.local.GoalTaskEntity
+import com.example.data.local.SyncTombstoneDao
+import com.example.data.local.SyncTombstoneEntity
 import com.example.data.local.parseDays
 import com.example.model.GoalPlan
 import com.example.model.GoalTask
@@ -19,7 +21,8 @@ import kotlinx.coroutines.flow.flow
 import java.util.UUID
 
 class RoomGoalRepository(
-    private val goalDao: GoalDao
+    private val goalDao: GoalDao,
+    private val syncTombstoneDao: SyncTombstoneDao? = null
 ) : GoalRepository {
 
     /** Emits start-of-today and re-emits when the day changes while the app stays open. */
@@ -104,6 +107,9 @@ class RoomGoalRepository(
     }
 
     override suspend fun deleteTask(taskId: String) {
+        // Remember the deletions so the cloud copies are removed on the next sync
+        goalDao.getChecksForTaskSync(taskId).forEach { tombstoneCheck(it.taskId, it.dayOffset) }
+        syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "GOAL_TASK", entityId = taskId))
         goalDao.deleteChecksForTask(taskId)
         goalDao.deleteTask(taskId)
     }
@@ -111,15 +117,27 @@ class RoomGoalRepository(
     override suspend fun toggleCheck(taskId: String, dayOffset: Int) {
         if (goalDao.isChecked(taskId, dayOffset)) {
             goalDao.deleteCheck(taskId, dayOffset)
+            tombstoneCheck(taskId, dayOffset)
         } else {
             goalDao.insertCheck(GoalCheckEntity(taskId, dayOffset, System.currentTimeMillis()))
         }
     }
 
     override suspend fun deletePlan(planId: String) {
+        goalDao.getTasksForPlanSync(planId).forEach { task ->
+            goalDao.getChecksForTaskSync(task.id).forEach { tombstoneCheck(it.taskId, it.dayOffset) }
+            syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "GOAL_TASK", entityId = task.id))
+        }
+        syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "GOAL_PLAN", entityId = planId))
         goalDao.deleteChecksForPlan(planId)
         goalDao.deleteTasksForPlan(planId)
         goalDao.deletePlan(planId)
+    }
+
+    private suspend fun tombstoneCheck(taskId: String, dayOffset: Int) {
+        syncTombstoneDao?.insertTombstone(
+            SyncTombstoneEntity(entityType = "GOAL_CHECK", entityId = taskId, extraId = dayOffset.toString())
+        )
     }
 
     private fun NewGoalTask.toEntity(planId: String, weekNumber: Int, createdAt: Long) = GoalTaskEntity(
