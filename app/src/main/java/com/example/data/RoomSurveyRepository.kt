@@ -12,6 +12,7 @@ import com.example.model.SurveyAnswer
 import com.example.model.SurveyQuestion
 import com.example.model.SurveyResponse
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
@@ -21,9 +22,16 @@ class RoomSurveyRepository(
 ) : SurveyRepository {
 
     override fun getSurveys(): Flow<List<Survey>> {
-        return surveyDao.getAllSurveys().map { entities ->
-            entities.map { entity ->
-                val questions = surveyDao.getQuestionsForSurveySync(entity.id).map { it.toDomain() }
+        // Observe BOTH tables so the list refreshes when questions arrive after the survey row.
+        return combine(
+            surveyDao.getAllSurveys(),
+            surveyDao.getAllQuestionsFlow()
+        ) { surveys, allQuestions ->
+            val bySurvey = allQuestions.groupBy { it.surveyId }
+            surveys.map { entity ->
+                val questions = (bySurvey[entity.id] ?: emptyList())
+                    .sortedBy { it.questionOrder }
+                    .map { it.toDomain() }
                 entity.toDomain(questions)
             }
         }
@@ -45,9 +53,18 @@ class RoomSurveyRepository(
 
     override suspend fun deleteSurvey(surveyId: String) {
         val responses = surveyDao.getResponsesForSurveySync(surveyId)
+        val questions = surveyDao.getQuestionsForSurveySync(surveyId)
+        // Tombstones so the cloud copies are deleted too (otherwise they come back on next pull)
         for (r in responses) {
-            surveyDao.deleteAnswersForResponse(r.id)
+            for (a in surveyDao.getAnswersForResponseSync(r.id)) {
+                syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "SURVEY_ANSWER", entityId = a.id))
+            }
+            syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "SURVEY_RESPONSE", entityId = r.id))
         }
+        for (q in questions) {
+            syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "SURVEY_QUESTION", entityId = q.id))
+        }
+        surveyDao.deleteAnswersForSurvey(surveyId)
         surveyDao.deleteResponsesForSurvey(surveyId)
         surveyDao.deleteQuestionsForSurvey(surveyId)
         surveyDao.deleteSurvey(surveyId)
@@ -66,10 +83,15 @@ class RoomSurveyRepository(
     }
 
     override fun getResponsesForSurvey(surveyId: String): Flow<List<SurveyResponse>> {
-        return surveyDao.getResponsesForSurvey(surveyId).map { responses ->
+        // Observe responses AND answers: answers are written after the response row,
+        // so watching only the responses table showed incomplete answers.
+        return combine(
+            surveyDao.getResponsesForSurvey(surveyId),
+            surveyDao.getAnswersForSurveyFlow(surveyId)
+        ) { responses, allAnswers ->
+            val byResponse = allAnswers.groupBy { it.responseId }
             responses.map { r ->
-                val answers = surveyDao.getAnswersForResponseSync(r.id).map { it.toDomain() }
-                r.toDomain(answers)
+                r.toDomain((byResponse[r.id] ?: emptyList()).map { it.toDomain() })
             }
         }
     }
@@ -98,7 +120,7 @@ class RoomSurveyRepository(
 
         val answerEntities = answers.map { (questionId, text) ->
             SurveyAnswerEntity(
-                id = UUID.randomUUID().toString(),
+                id = answerId(responseId, questionId),
                 responseId = responseId,
                 questionId = questionId,
                 answerText = text
@@ -112,19 +134,26 @@ class RoomSurveyRepository(
     override suspend fun updateResponse(responseId: String, answers: Map<String, String>) {
         val existing = surveyDao.getResponseById(responseId) ?: return
         val now = System.currentTimeMillis()
-        val updated = existing.copy(updatedAt = now)
-        surveyDao.updateResponse(updated)
+        surveyDao.updateResponse(existing.copy(updatedAt = now))
 
-        // Replace answers for this response
-        surveyDao.deleteAnswersForResponse(responseId)
         val answerEntities = answers.map { (questionId, text) ->
             SurveyAnswerEntity(
-                id = UUID.randomUUID().toString(),
+                id = answerId(responseId, questionId),
                 responseId = responseId,
                 questionId = questionId,
                 answerText = text
             )
         }
+        // Remove legacy answers (random ids) and make sure the cloud copies are deleted as well
+        val keepIds = answerEntities.map { it.id }.toSet()
+        val obsolete = surveyDao.getAnswersForResponseSync(responseId).filter { it.id !in keepIds }
+        if (obsolete.isNotEmpty()) {
+            surveyDao.deleteAnswersByIds(obsolete.map { it.id })
+            for (a in obsolete) {
+                syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "SURVEY_ANSWER", entityId = a.id))
+            }
+        }
+        // Same ids -> REPLACE overwrites in place (no delete/re-insert gap)
         surveyDao.insertAnswers(answerEntities)
     }
 
@@ -150,7 +179,7 @@ class RoomSurveyRepository(
 
         val copiedAnswers = sourceAnswers.map {
             SurveyAnswerEntity(
-                id = UUID.randomUUID().toString(),
+                id = answerId(newResponseId, it.questionId),
                 responseId = newResponseId,
                 questionId = it.questionId,
                 answerText = it.answerText
@@ -162,6 +191,9 @@ class RoomSurveyRepository(
     }
 
     override suspend fun deleteResponse(responseId: String) {
+        for (a in surveyDao.getAnswersForResponseSync(responseId)) {
+            syncTombstoneDao?.insertTombstone(SyncTombstoneEntity(entityType = "SURVEY_ANSWER", entityId = a.id))
+        }
         surveyDao.deleteAnswersForResponse(responseId)
         surveyDao.deleteResponse(responseId)
         syncTombstoneDao?.insertTombstone(
@@ -171,4 +203,6 @@ class RoomSurveyRepository(
             )
         )
     }
+
+    private fun answerId(responseId: String, questionId: String) = "${responseId}_$questionId"
 }
