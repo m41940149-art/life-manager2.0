@@ -8,7 +8,7 @@ import java.util.UUID
 data class SyncTombstoneEntity(
     @PrimaryKey
     val id: String = UUID.randomUUID().toString(),
-    val entityType: String, // "TASK", "HABIT", "HABIT_COMPLETION", "FOLDER", "TEXT_CARD", "SURVEY", "SURVEY_RESPONSE"
+    val entityType: String, // "TASK", "HABIT", "HABIT_COMPLETION", "FOLDER", "TEXT_CARD", "SURVEY", "SURVEY_RESPONSE", "GOAL_PLAN", "GOAL_TASK", "GOAL_CHECK"
     val entityId: String,
     val extraId: String? = null,
     val deletedAt: Long = System.currentTimeMillis()
