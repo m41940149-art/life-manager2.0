@@ -101,6 +101,12 @@ class HabitsViewModel(
         }
     }
 
+    fun reorderHabits(orderedHabitIds: List<String>) {
+        viewModelScope.launch {
+            repository.reorderHabits(orderedHabitIds)
+        }
+    }
+
     fun deleteHabit(habitId: String) {
         viewModelScope.launch {
             if (_selectedHabitForHistory.value?.id == habitId) {
