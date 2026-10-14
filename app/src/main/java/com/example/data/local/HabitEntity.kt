@@ -19,6 +19,7 @@ data class HabitEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val colorHex: Long = 0xFF006C5F,
     val categoryIcon: String = "check_circle",
+    val sortOrder: Int = 0,
     val syncStatus: String = SyncStatus.PENDING_SYNC.name
 )
 
@@ -46,5 +47,6 @@ fun Habit.toEntity(
     updatedAt = updatedAt,
     colorHex = colorHex,
     categoryIcon = categoryIcon,
+    sortOrder = sortOrder,
     syncStatus = syncStatus.name
 )
