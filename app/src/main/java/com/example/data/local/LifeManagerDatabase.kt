@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GoalTaskEntity::class,
         GoalCheckEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class LifeManagerDatabase : RoomDatabase() {
@@ -238,6 +238,22 @@ abstract class LifeManagerDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0")
+                // Keep the current visual order (newest first) as the initial custom order.
+                db.execSQL(
+                    """
+                    UPDATE `habits` SET `sortOrder` = (
+                        SELECT COUNT(*) FROM `habits` AS h2
+                        WHERE h2.`createdAt` > `habits`.`createdAt`
+                           OR (h2.`createdAt` = `habits`.`createdAt` AND h2.`id` < `habits`.`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): LifeManagerDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -245,7 +261,7 @@ abstract class LifeManagerDatabase : RoomDatabase() {
                     LifeManagerDatabase::class.java,
                     "life_manager.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                 INSTANCE = instance
                 instance
