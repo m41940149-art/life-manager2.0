@@ -11,6 +11,7 @@ interface HabitRepository {
     suspend fun addHabit(habit: Habit)
     suspend fun updateHabit(habit: Habit)
     suspend fun deleteHabit(habitId: String)
+    suspend fun reorderHabits(orderedHabitIds: List<String>)
     suspend fun toggleHabitCheckIn(habitId: String, dateTimestamp: Long = DateTimeUtils.getTodayStartOfDay())
     suspend fun completeMissedOccurrence(habitId: String, missedDateTimestamp: Long)
     suspend fun breakMissedOccurrence(habitId: String, missedDateTimestamp: Long)
