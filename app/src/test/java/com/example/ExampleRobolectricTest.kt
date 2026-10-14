@@ -198,6 +198,28 @@ class ExampleRobolectricTest {
     }
 
     @Test
+    fun `reorder - new habits appear on top and reorderHabits persists custom order`() {
+        runBlocking {
+            roomHabitRepo.addHabit(Habit(id = "r-a", name = "A"))
+            roomHabitRepo.addHabit(Habit(id = "r-b", name = "B"))
+            roomHabitRepo.addHabit(Habit(id = "r-c", name = "C"))
+
+            // Newest first by default
+            assertEquals(listOf("r-c", "r-b", "r-a"), roomHabitRepo.getHabits().first().map { it.id })
+
+            roomHabitRepo.reorderHabits(listOf("r-a", "r-c", "r-b"))
+            assertEquals(listOf("r-a", "r-c", "r-b"), roomHabitRepo.getHabits().first().map { it.id })
+
+            // A habit added afterwards goes to the top without breaking the custom order
+            roomHabitRepo.addHabit(Habit(id = "r-d", name = "D"))
+            assertEquals(
+                listOf("r-d", "r-a", "r-c", "r-b"),
+                roomHabitRepo.getHabits().first().map { it.id }
+            )
+        }
+    }
+
+    @Test
     fun `test case 4 - user says yes completed it records completion for actual missed date`() {
         runBlocking {
             val yesterday = DateTimeUtils.getYesterdayStartOfDay()
