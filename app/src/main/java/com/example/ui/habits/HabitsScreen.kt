@@ -12,6 +12,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
+import com.example.model.Habit
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +65,32 @@ fun HabitsScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddSheet by remember { mutableStateOf(false) }
+
+    // --- Drag & drop reordering state ---
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    var orderOverride by remember { mutableStateOf<List<String>?>(null) }
+    var draggingHabitId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    // Persisted list, re-ordered by the in-progress / not-yet-persisted drag order.
+    val displayedHabits: List<Habit> = run {
+        val custom = orderOverride
+        if (custom == null) {
+            uiState.habits
+        } else {
+            val byId = uiState.habits.associateBy { it.id }
+            uiState.habits.filter { it.id !in custom } + custom.mapNotNull { byId[it] }
+        }
+    }
+
+    // Drop the temporary override once the database order has caught up with it.
+    LaunchedEffect(uiState.habits) {
+        if (draggingHabitId == null && orderOverride == uiState.habits.map { it.id }) {
+            orderOverride = null
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -170,11 +209,89 @@ fun HabitsScreen(
                 )
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 88.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(uiState.habits, key = { it.id }) { habit ->
+                    items(displayedHabits, key = { it.id }) { habit ->
+                        val isDragging = draggingHabitId == habit.id
+
+                        val dragHandleModifier = Modifier.pointerInput(habit.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    draggingHabitId = habit.id
+                                    dragOffsetY = 0f
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    dragOffsetY += dragAmount.y
+
+                                    val layout = listState.layoutInfo
+                                    val current = layout.visibleItemsInfo
+                                        .firstOrNull { it.key == habit.id }
+                                        ?: return@detectDragGesturesAfterLongPress
+
+                                    val centerY = current.offset + current.size / 2f + dragOffsetY
+                                    val target = layout.visibleItemsInfo.firstOrNull {
+                                        it.key != habit.id &&
+                                            centerY >= it.offset &&
+                                            centerY <= it.offset + it.size
+                                    }
+
+                                    if (target != null) {
+                                        val ids = orderOverride ?: uiState.habits.map { it.id }
+                                        val from = ids.indexOf(habit.id)
+                                        val to = ids.indexOf(target.key)
+                                        if (from != -1 && to != -1 && from != to) {
+                                            val newOffset = if (to > from) {
+                                                target.offset + target.size - current.size
+                                            } else {
+                                                target.offset
+                                            }
+                                            orderOverride = ids.toMutableList().apply {
+                                                add(to, removeAt(from))
+                                            }
+                                            // Keep the dragged card under the finger after the swap.
+                                            dragOffsetY += (current.offset - newOffset)
+                                        }
+                                    }
+
+                                    // Auto-scroll near the list edges.
+                                    val viewportTop = layout.viewportStartOffset
+                                    val viewportBottom = layout.viewportEndOffset
+                                    val edge = 120f
+                                    val scrollDelta = when {
+                                        centerY < viewportTop + edge -> -24f
+                                        centerY > viewportBottom - edge -> 24f
+                                        else -> 0f
+                                    }
+                                    if (scrollDelta != 0f) {
+                                        scope.launch {
+                                            listState.scrollBy(scrollDelta)
+                                        }
+                                        dragOffsetY += scrollDelta
+                                    }
+                                },
+                                onDragEnd = {
+                                    val ordered = orderOverride
+                                    if (ordered != null && ordered != uiState.habits.map { it.id }) {
+                                        viewModel.reorderHabits(ordered)
+                                    } else {
+                                        orderOverride = null
+                                    }
+                                    draggingHabitId = null
+                                    dragOffsetY = 0f
+                                },
+                                onDragCancel = {
+                                    draggingHabitId = null
+                                    dragOffsetY = 0f
+                                    orderOverride = null
+                                }
+                            )
+                        }
+
                         HabitItemCard(
                             habit = habit,
                             isArabic = isArabic,
@@ -184,7 +301,20 @@ fun HabitsScreen(
                             onResolveMissed = { habitId, dateTimestamp, completed ->
                                 viewModel.resolveMissedOccurrence(habitId, dateTimestamp, completed)
                             },
-                            onDelete = { viewModel.deleteHabit(habit.id) }
+                            onDelete = { viewModel.deleteHabit(habit.id) },
+                            dragHandleModifier = dragHandleModifier,
+                            modifier = if (isDragging) {
+                                Modifier
+                                    .zIndex(1f)
+                                    .graphicsLayer {
+                                        translationY = dragOffsetY
+                                        scaleX = 1.03f
+                                        scaleY = 1.03f
+                                        shadowElevation = 16f
+                                    }
+                            } else {
+                                Modifier.animateItem()
+                            }
                         )
                     }
                 }
