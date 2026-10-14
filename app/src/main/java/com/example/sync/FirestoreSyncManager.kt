@@ -330,7 +330,8 @@ class FirestoreSyncManager(
                 "createdAt" to h.createdAt,
                 "updatedAt" to h.updatedAt,
                 "colorHex" to h.colorHex,
-                "categoryIcon" to h.categoryIcon
+                "categoryIcon" to h.categoryIcon,
+                "sortOrder" to h.sortOrder
             )
             pushIfChanged(habitsCol.document(h.id), map)
         }
@@ -354,6 +355,7 @@ class FirestoreSyncManager(
                     updatedAt = remoteUpdatedAt,
                     colorHex = doc.getLong("colorHex") ?: 0xFF006C5F,
                     categoryIcon = doc.getString("categoryIcon") ?: "check_circle",
+                    sortOrder = doc.getLong("sortOrder")?.toInt() ?: 0,
                     syncStatus = SyncStatus.SYNCED.name
                 )
                 database.habitDao().insertHabit(newHabit)
@@ -368,6 +370,7 @@ class FirestoreSyncManager(
                     updatedAt = remoteUpdatedAt,
                     colorHex = doc.getLong("colorHex") ?: localHabit.colorHex,
                     categoryIcon = doc.getString("categoryIcon") ?: localHabit.categoryIcon,
+                    sortOrder = doc.getLong("sortOrder")?.toInt() ?: localHabit.sortOrder,
                     syncStatus = SyncStatus.SYNCED.name
                 )
                 database.habitDao().updateHabit(updatedHabit)
