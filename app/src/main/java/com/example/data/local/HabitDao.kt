@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface HabitDao {
 
-    @Query("SELECT * FROM habits WHERE syncStatus != 'PENDING_DELETE' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM habits WHERE syncStatus != 'PENDING_DELETE' ORDER BY sortOrder ASC, createdAt DESC")
     fun getAllHabits(): Flow<List<HabitEntity>>
 
     @Query("SELECT * FROM habits WHERE id = :id LIMIT 1")
@@ -45,6 +45,12 @@ interface HabitDao {
 
     @Query("SELECT COUNT(*) > 0 FROM habit_completions WHERE habitId = :habitId AND dateTimestamp = :dateTimestamp")
     suspend fun isCompletedOnDate(habitId: String, dateTimestamp: Long): Boolean
+
+    @Query("SELECT MIN(sortOrder) FROM habits WHERE syncStatus != 'PENDING_DELETE'")
+    suspend fun getMinSortOrder(): Int?
+
+    @Update
+    suspend fun updateHabits(habits: List<HabitEntity>)
 
     @Query("SELECT COUNT(*) FROM habits WHERE syncStatus != 'PENDING_DELETE'")
     suspend fun getHabitCount(): Int
