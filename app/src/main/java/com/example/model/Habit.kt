@@ -29,7 +29,8 @@ data class Habit(
     val pendingMissedDate: Long? = null,
     val pendingMissedCount: Int = 0,
     val colorHex: Long = 0xFF006C5F,
-    val categoryIcon: String = "check_circle"
+    val categoryIcon: String = "check_circle",
+    val sortOrder: Int = 0
 )
 
 data class HabitCompletion(
