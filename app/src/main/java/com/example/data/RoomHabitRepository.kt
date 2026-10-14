@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.data.local.HabitCompletionEntity
 import com.example.data.local.HabitDao
 import com.example.data.local.HabitMissedResolutionEntity
+import com.example.data.local.SyncStatus
 import com.example.data.local.SyncTombstoneDao
 import com.example.data.local.SyncTombstoneEntity
 import com.example.data.local.parseDaysOfWeek
@@ -71,7 +72,8 @@ class RoomHabitRepository(
                     pendingMissedDate = streak.earliestPendingMissedDate,
                     pendingMissedCount = streak.pendingMissedOccurrences.size,
                     colorHex = entity.colorHex,
-                    categoryIcon = entity.categoryIcon
+                    categoryIcon = entity.categoryIcon,
+                    sortOrder = entity.sortOrder
                 )
             }
         }
@@ -84,7 +86,9 @@ class RoomHabitRepository(
     }
 
     override suspend fun addHabit(habit: Habit) {
-        val entity = habit.toEntity()
+        // New habits go to the top of the list (same as the previous newest-first behavior).
+        val topOrder = (habitDao.getMinSortOrder() ?: 0) - 1
+        val entity = habit.toEntity().copy(sortOrder = topOrder)
         habitDao.insertHabit(entity)
         if (entity.notificationEnabled) {
             HabitNotificationScheduler.scheduleHabit(context, entity)
@@ -99,6 +103,20 @@ class RoomHabitRepository(
         } else {
             HabitNotificationScheduler.cancelHabit(context, entity.id)
         }
+    }
+
+    override suspend fun reorderHabits(orderedHabitIds: List<String>) {
+        val now = System.currentTimeMillis()
+        val byId = habitDao.getAllHabitsSync().associateBy { it.id }
+        val updated = orderedHabitIds.mapIndexedNotNull { index, id ->
+            byId[id]?.copy(
+                sortOrder = index,
+                updatedAt = now,
+                syncStatus = SyncStatus.PENDING_SYNC.name
+            )
+        }
+        // Single @Update => one transaction and a single Flow emission (no flicker).
+        habitDao.updateHabits(updated)
     }
 
     override suspend fun deleteHabit(habitId: String) {
