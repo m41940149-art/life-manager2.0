@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
@@ -71,7 +72,8 @@ fun HabitItemCard(
     onForgotToRecord: () -> Unit,
     onResolveMissed: (habitId: String, dateTimestamp: Long, completed: Boolean) -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dragHandleModifier: Modifier? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -168,6 +170,22 @@ fun HabitItemCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
+                        )
+                    }
+                }
+
+                // Drag handle for reordering (long-press and drag)
+                if (dragHandleModifier != null) {
+                    Box(
+                        modifier = dragHandleModifier
+                            .size(40.dp)
+                            .testTag("drag_handle_${habit.id}"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DragHandle,
+                            contentDescription = if (isArabic) "اسحب لإعادة الترتيب" else "Drag to reorder",
+                            tint = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
