@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -28,7 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 /**
- * Single "+" button. Tapping it reveals two options: new card / new folder.
+ * Single "+" button. Tapping it reveals three options: new checklist / new card / new folder.
  * The "+" rotates into an "x" while expanded.
  */
 @Composable
@@ -37,6 +38,7 @@ fun ExpandableAddFab(
     onToggle: () -> Unit,
     isArabic: Boolean,
     onAddCard: () -> Unit,
+    onAddChecklist: () -> Unit,
     onAddFolder: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -63,6 +65,14 @@ fun ExpandableAddFab(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.testTag("add_folder_fab")
+                )
+                ExtendedFloatingActionButton(
+                    onClick = onAddChecklist,
+                    icon = { Icon(Icons.Default.Checklist, contentDescription = null) },
+                    text = { Text(if (isArabic) "قائمة" else "Checklist") },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.testTag("add_checklist_fab")
                 )
                 ExtendedFloatingActionButton(
                     onClick = onAddCard,
