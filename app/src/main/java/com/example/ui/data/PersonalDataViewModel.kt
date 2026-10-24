@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppContainer
 import com.example.data.DataRepository
+import com.example.model.Checklist
 import com.example.model.Folder
 import com.example.model.TextCard
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,8 +19,10 @@ import kotlinx.coroutines.sync.withLock
 data class PersonalDataUiState(
     val folders: List<Folder> = emptyList(),
     val allCards: List<TextCard> = emptyList(),
+    val allChecklists: List<Checklist> = emptyList(),
     val currentFolder: Folder? = null,
     val displayedCards: List<TextCard> = emptyList(),
+    val displayedChecklists: List<Checklist> = emptyList(),
     val searchQuery: String = "",
     val showOnlyFavorites: Boolean = false
 )
@@ -35,13 +38,20 @@ class PersonalDataViewModel(
     private val _searchQuery = MutableStateFlow("")
     private val _showOnlyFavorites = MutableStateFlow(false)
 
+    // Text cards and checklists travel together so the 5-argument combine below still fits
+    private val contentFlow = combine(
+        repository.getTextCards(),
+        repository.getChecklists()
+    ) { cards, checklists -> cards to checklists }
+
     val uiState: StateFlow<PersonalDataUiState> = combine(
         repository.getFolders(),
-        repository.getTextCards(),
+        contentFlow,
         _currentFolderId,
         _searchQuery,
         _showOnlyFavorites
-    ) { folders, cards, currentFolderId, query, onlyFavs ->
+    ) { folders, content, currentFolderId, query, onlyFavs ->
+        val (cards, checklists) = content
         val currentFolder = folders.find { it.id == currentFolderId }
 
         val cardsInScope = when {
@@ -49,23 +59,41 @@ class PersonalDataViewModel(
             currentFolderId != null -> cards.filter { it.folderId == currentFolderId }
             else -> cards.filter { it.folderId == null } // Root shows unfiled cards
         }
+        val listsInScope = when {
+            onlyFavs -> checklists.filter { it.isFavorite }
+            currentFolderId != null -> checklists.filter { it.folderId == currentFolderId }
+            else -> checklists.filter { it.folderId == null }
+        }
 
-        val filteredCards = if (query.isBlank()) {
-            cardsInScope
+        val filteredCards: List<TextCard>
+        val filteredLists: List<Checklist>
+        if (query.isBlank()) {
+            filteredCards = cardsInScope
+            filteredLists = listsInScope
         } else {
             // When user searches, search across relevant cards or all cards if at root
-            val searchBase = if (currentFolderId != null) cardsInScope else cards
-            searchBase.filter {
+            val cardsBase = if (currentFolderId != null) cardsInScope else cards
+            val listsBase = if (currentFolderId != null) listsInScope else checklists
+            filteredCards = cardsBase.filter {
                 it.title.contains(query, ignoreCase = true) ||
                         it.content.contains(query, ignoreCase = true)
+            }
+            filteredLists = listsBase.filter { list ->
+                list.title.contains(query, ignoreCase = true) ||
+                        list.items.any {
+                            it.text.contains(query, ignoreCase = true) ||
+                                    it.note.contains(query, ignoreCase = true)
+                        }
             }
         }
 
         PersonalDataUiState(
             folders = folders,
             allCards = cards,
+            allChecklists = checklists,
             currentFolder = currentFolder,
             displayedCards = filteredCards,
+            displayedChecklists = filteredLists,
             searchQuery = query,
             showOnlyFavorites = onlyFavs
         )
@@ -177,6 +205,34 @@ class PersonalDataViewModel(
     fun moveCard(cardId: String, newFolderId: String?) {
         viewModelScope.launch {
             repository.moveCardToFolder(cardId, newFolderId)
+        }
+    }
+
+    fun saveChecklist(checklist: Checklist, isNew: Boolean) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                if (isNew) repository.addChecklist(checklist) else repository.updateChecklist(checklist)
+            }
+        }
+    }
+
+    fun deleteChecklist(checklistId: String) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                repository.deleteChecklist(checklistId)
+            }
+        }
+    }
+
+    fun toggleChecklistFavorite(checklistId: String) {
+        viewModelScope.launch {
+            repository.toggleChecklistFavorite(checklistId)
+        }
+    }
+
+    fun moveChecklist(checklistId: String, newFolderId: String?) {
+        viewModelScope.launch {
+            repository.moveChecklistToFolder(checklistId, newFolderId)
         }
     }
 }
