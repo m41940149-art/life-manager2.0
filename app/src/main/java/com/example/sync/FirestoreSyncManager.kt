@@ -1,6 +1,7 @@
 package com.example.sync
 
 import android.content.Context
+import com.example.data.local.ChecklistEntity
 import com.example.data.local.FolderEntity
 import com.example.data.local.GoalCheckEntity
 import com.example.data.local.GoalPlanEntity
@@ -196,6 +197,7 @@ class FirestoreSyncManager(
             // 4. Sync Data (Folders & TextCards)
             syncFolders(userDoc)
             syncTextCards(userDoc)
+            syncChecklists(userDoc)
 
             // 5. Sync Surveys (Surveys, Questions, Responses, Answers)
             syncSurveys(userDoc)
@@ -238,6 +240,7 @@ class FirestoreSyncManager(
                     "HABIT_COMPLETION" -> userDoc.collection("habit_completions").document("${t.entityId}__${t.extraId}").delete().await()
                     "FOLDER" -> userDoc.collection("folders").document(t.entityId).delete().await()
                     "TEXT_CARD" -> userDoc.collection("text_cards").document(t.entityId).delete().await()
+                    "CHECKLIST" -> userDoc.collection("checklists").document(t.entityId).delete().await()
                     "SURVEY" -> userDoc.collection("surveys").document(t.entityId).delete().await()
                     "SURVEY_RESPONSE" -> userDoc.collection("survey_responses").document(t.entityId).delete().await()
                     "SURVEY_QUESTION" -> userDoc.collection("survey_questions").document(t.entityId).delete().await()
@@ -540,6 +543,55 @@ class FirestoreSyncManager(
                     updatedAt = remoteUpdatedAt
                 )
                 database.textCardDao().updateCard(updatedCard)
+            }
+        }
+    }
+
+    private suspend fun syncChecklists(userDoc: com.google.firebase.firestore.DocumentReference) {
+        val col = userDoc.collection("checklists")
+        val dao = database.checklistDao()
+        val local = dao.getAllChecklistsSync()
+
+        for (c in local) {
+            val map = hashMapOf<String, Any?>(
+                "id" to c.id,
+                "title" to c.title,
+                "folderId" to c.folderId,
+                "isFavorite" to c.isFavorite,
+                "itemsJson" to c.itemsJson,
+                "createdAt" to c.createdAt,
+                "updatedAt" to c.updatedAt
+            )
+            pushIfChanged(col.document(c.id), map)
+        }
+
+        val remote = fetchRemote(col)
+        for (doc in remote.documents) {
+            val id = doc.getString("id") ?: doc.id
+            val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
+            val existing = dao.getChecklistById(id)
+            if (existing == null) {
+                dao.insertChecklist(
+                    ChecklistEntity(
+                        id = id,
+                        title = doc.getString("title") ?: "",
+                        folderId = doc.getString("folderId"),
+                        isFavorite = doc.getBoolean("isFavorite") ?: false,
+                        itemsJson = doc.getString("itemsJson") ?: "[]",
+                        createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
+                        updatedAt = remoteUpdatedAt
+                    )
+                )
+            } else if (remoteUpdatedAt > existing.updatedAt) {
+                dao.updateChecklist(
+                    existing.copy(
+                        title = doc.getString("title") ?: existing.title,
+                        folderId = doc.getString("folderId"),
+                        isFavorite = doc.getBoolean("isFavorite") ?: existing.isFavorite,
+                        itemsJson = doc.getString("itemsJson") ?: existing.itemsJson,
+                        updatedAt = remoteUpdatedAt
+                    )
+                )
             }
         }
     }
