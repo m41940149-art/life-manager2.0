@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.Checklist
 import com.example.model.Folder
 import com.example.model.TextCard
 import com.example.ui.components.EmptyStateView
@@ -79,6 +80,7 @@ fun PersonalDataScreen(
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
     var editorRequest by remember { mutableStateOf<EditorRequest?>(null) }
+    var checklistEditorRequest by remember { mutableStateOf<ChecklistEditorRequest?>(null) }
     var showMoveSelected by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var folderToRename by remember { mutableStateOf<Folder?>(null) }
@@ -87,48 +89,66 @@ fun PersonalDataScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Cards hidden from the list while the "Undo" snackbar is showing.
+    // Cards / checklists hidden from the list while the "Undo" snackbar is showing.
     // They are really deleted only when the snackbar closes without Undo.
     val pendingDeletes = remember { mutableStateListOf<TextCard>() }
+    val pendingChecklistDeletes = remember { mutableStateListOf<Checklist>() }
     val visibleCards = uiState.displayedCards.filter { c -> pendingDeletes.none { it.id == c.id } }
+    val visibleChecklists = uiState.displayedChecklists.filter { c -> pendingChecklistDeletes.none { it.id == c.id } }
+    // Text cards and checklists share one grid, newest first
+    val entries: List<DataEntry> = (
+        visibleCards.map { DataEntry.Note(it) } + visibleChecklists.map { DataEntry.Todo(it) }
+        ).sortedByDescending { it.updatedAt }
     val selectionMode = selectedIds.isNotEmpty()
+    val selectedEntries = entries.filter { it.id in selectedIds }
     val selectedCards = visibleCards.filter { it.id in selectedIds }
+    val selectedChecklists = visibleChecklists.filter { it.id in selectedIds }
 
-    val commitDelete: (List<TextCard>) -> Unit = { batch ->
-        batch.forEach { c ->
+    val commitDelete: (List<TextCard>, List<Checklist>) -> Unit = { cards, lists ->
+        cards.forEach { c ->
             if (pendingDeletes.removeAll { it.id == c.id }) viewModel.deleteTextCard(c.id)
         }
+        lists.forEach { l ->
+            if (pendingChecklistDeletes.removeAll { it.id == l.id }) viewModel.deleteChecklist(l.id)
+        }
     }
-    val requestDelete: (List<TextCard>) -> Unit = { batch ->
-        if (batch.isNotEmpty()) {
+    val requestDelete: (List<TextCard>, List<Checklist>) -> Unit = { cards, lists ->
+        val count = cards.size + lists.size
+        if (count > 0) {
             snackbarHostState.currentSnackbarData?.dismiss()
-            pendingDeletes.addAll(batch)
+            pendingDeletes.addAll(cards)
+            pendingChecklistDeletes.addAll(lists)
             selectedIds = emptySet()
             scope.launch {
                 val result = snackbarHostState.showSnackbar(
-                    message = if (batch.size == 1) {
-                        if (isArabic) "تم حذف البطاقة" else "Card deleted"
+                    message = if (count == 1) {
+                        if (lists.isNotEmpty()) {
+                            if (isArabic) "تم حذف القائمة" else "List deleted"
+                        } else {
+                            if (isArabic) "تم حذف البطاقة" else "Card deleted"
+                        }
                     } else {
-                        if (isArabic) "تم حذف ${batch.size} بطاقات" else "${batch.size} cards deleted"
+                        if (isArabic) "تم حذف $count عناصر" else "$count items deleted"
                     },
                     actionLabel = if (isArabic) "تراجع" else "Undo",
                     duration = SnackbarDuration.Short
                 )
                 if (result == SnackbarResult.ActionPerformed) {
-                    pendingDeletes.removeAll { c -> batch.any { it.id == c.id } }
+                    pendingDeletes.removeAll { c -> cards.any { it.id == c.id } }
+                    pendingChecklistDeletes.removeAll { c -> lists.any { it.id == c.id } }
                 } else {
-                    commitDelete(batch)
+                    commitDelete(cards, lists)
                 }
             }
         }
     }
     // Leaving the screen while a delete is pending: finish the delete
     DisposableEffect(Unit) {
-        onDispose { commitDelete(pendingDeletes.toList()) }
+        onDispose { commitDelete(pendingDeletes.toList(), pendingChecklistDeletes.toList()) }
     }
     // Drop selections that are no longer visible (folder switched, searched, deleted...)
-    LaunchedEffect(visibleCards) {
-        val ids = visibleCards.map { it.id }.toSet()
+    LaunchedEffect(entries) {
+        val ids = entries.map { it.id }.toSet()
         if (!ids.containsAll(selectedIds)) selectedIds = selectedIds intersect ids
     }
     LaunchedEffect(selectionMode) { if (!selectionMode) showMoveSelected = false }
@@ -154,6 +174,10 @@ fun PersonalDataScreen(
                     fabExpanded = false
                     editorRequest = EditorRequest(card = null)
                 },
+                onAddChecklist = {
+                    fabExpanded = false
+                    checklistEditorRequest = ChecklistEditorRequest(checklist = null)
+                },
                 onAddFolder = {
                     fabExpanded = false
                     showAddFolderDialog = true
@@ -170,15 +194,16 @@ fun PersonalDataScreen(
                 SelectionBar(
                     count = selectedIds.size,
                     isArabic = isArabic,
-                    allFavorite = selectedCards.isNotEmpty() && selectedCards.all { it.isFavorite },
+                    allFavorite = selectedEntries.isNotEmpty() && selectedEntries.all { it.isFavorite },
                     onClose = { selectedIds = emptySet() },
                     onToggleFavorite = {
-                        val allFav = selectedCards.all { it.isFavorite }
+                        val allFav = selectedEntries.all { it.isFavorite }
                         selectedCards.filter { it.isFavorite == allFav }.forEach { viewModel.toggleFavorite(it.id) }
+                        selectedChecklists.filter { it.isFavorite == allFav }.forEach { viewModel.toggleChecklistFavorite(it.id) }
                         selectedIds = emptySet()
                     },
                     onMove = { showMoveSelected = true },
-                    onDelete = { requestDelete(selectedCards) }
+                    onDelete = { requestDelete(selectedCards, selectedChecklists) }
                 )
             } else {
             // Keep-style rounded search pill
@@ -187,7 +212,7 @@ fun PersonalDataScreen(
                     onValueChange = { viewModel.setSearchQuery(it) },
                     placeholder = {
                         Text(
-                            if (isArabic) "ابحث في بطاقاتك" else "Search your cards",
+                            if (isArabic) "ابحث في بطاقاتك وقوائمك" else "Search your cards and lists",
                             fontSize = 15.sp
                         )
                     },
@@ -254,12 +279,12 @@ fun PersonalDataScreen(
                 verticalItemSpacing = 8.dp,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (visibleCards.isEmpty()) {
+                if (entries.isEmpty()) {
                     item(span = StaggeredGridItemSpan.FullLine) {
                         val emptyTitle = when {
                             uiState.searchQuery.isNotBlank() -> if (isArabic) "لا توجد نتائج بحث" else "No matching cards"
                             uiState.showOnlyFavorites -> if (isArabic) "لا توجد بطاقات مفضلة بعد" else "No favorite cards yet"
-                            uiState.currentFolder != null -> if (isArabic) "لا توجد بطاقات في هذا المجلد" else "No cards in this folder"
+                            uiState.currentFolder != null -> if (isArabic) "لا توجد عناصر في هذا المجلد" else "Nothing in this folder yet"
                             uiState.folders.isEmpty() -> if (isArabic) "لا توجد مجلدات أو بطاقات بعد" else "No folders or cards yet"
                             else -> if (isArabic) "لا توجد بطاقات عامة بعد" else "No unfiled cards yet"
                         }
@@ -267,8 +292,8 @@ fun PersonalDataScreen(
                         val emptySubtitle = when {
                             uiState.searchQuery.isNotBlank() -> if (isArabic) "جرب كلمة بحث أخرى." else "Try a different search term."
                             uiState.showOnlyFavorites -> if (isArabic) "افتح أي بطاقة واضغط على النجمة لإضافتها إلى المفضلة." else "Open any card and tap the star to add it to favorites."
-                            uiState.currentFolder != null -> if (isArabic) "ابدأ بإضافة بطاقة نصية داخل هذا المجلد." else "Start adding text cards to this folder."
-                            else -> if (isArabic) "أنشئ بطاقات نصية لحفظ الأفكار، الملاحظات الهامة، أو البيانات المحمية." else "Create text cards to save personal notes, ideas, or protected data."
+                            uiState.currentFolder != null -> if (isArabic) "ابدأ بإضافة بطاقة نصية أو قائمة داخل هذا المجلد." else "Start adding text cards or checklists to this folder."
+                            else -> if (isArabic) "أنشئ بطاقات نصية لحفظ الملاحظات، أو قوائم للأفلام والكتب والتسوق." else "Create text cards for notes, or checklists for movies, books and shopping."
                         }
 
                         EmptyStateView(
@@ -280,22 +305,32 @@ fun PersonalDataScreen(
                         )
                     }
                 } else {
-                    items(visibleCards, key = { it.id }) { card ->
-                        TextDataCard(
-                            card = card,
-                            isArabic = isArabic,
-                            selected = card.id in selectedIds,
-                            onClick = {
-                                if (selectionMode) {
-                                    selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
-                                } else {
-                                    editorRequest = EditorRequest(card = card)
-                                }
-                            },
-                            onLongClick = {
-                                selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
-                            }
-                        )
+                    items(entries, key = { it.id }) { entry ->
+                        val toggleSelected = {
+                            selectedIds = if (entry.id in selectedIds) selectedIds - entry.id else selectedIds + entry.id
+                        }
+                        when (entry) {
+                            is DataEntry.Note -> TextDataCard(
+                                card = entry.card,
+                                isArabic = isArabic,
+                                selected = entry.id in selectedIds,
+                                onClick = {
+                                    if (selectionMode) toggleSelected()
+                                    else editorRequest = EditorRequest(card = entry.card)
+                                },
+                                onLongClick = toggleSelected
+                            )
+                            is DataEntry.Todo -> ChecklistDataCard(
+                                checklist = entry.checklist,
+                                isArabic = isArabic,
+                                selected = entry.id in selectedIds,
+                                onClick = {
+                                    if (selectionMode) toggleSelected()
+                                    else checklistEditorRequest = ChecklistEditorRequest(checklist = entry.checklist)
+                                },
+                                onLongClick = toggleSelected
+                            )
+                        }
                     }
                 }
             }
@@ -380,18 +415,21 @@ fun PersonalDataScreen(
             )
         }
 
-        // Dialog: Move the selected cards to a folder
-        if (showMoveSelected && selectedCards.isNotEmpty()) {
+        // Dialog: Move the selected cards / checklists to a folder
+        if (showMoveSelected && selectedEntries.isNotEmpty()) {
             MoveCardDialog(
-                card = selectedCards.first().copy(
-                    folderId = selectedCards.map { it.folderId }.distinct().singleOrNull()
+                card = TextCard(
+                    title = selectedEntries.first().title.ifBlank { if (isArabic) "بدون عنوان" else "Untitled" },
+                    content = "",
+                    folderId = selectedEntries.map { it.folderId }.distinct().singleOrNull()
                 ),
-                selectedCount = selectedCards.size,
+                selectedCount = selectedEntries.size,
                 folders = uiState.folders,
                 isArabic = isArabic,
                 onDismiss = { showMoveSelected = false },
                 onMove = { newFolderId ->
                     selectedCards.forEach { viewModel.moveCard(it.id, newFolderId) }
+                    selectedChecklists.forEach { viewModel.moveChecklist(it.id, newFolderId) }
                     selectedIds = emptySet()
                     showMoveSelected = false
                 }
@@ -408,8 +446,24 @@ fun PersonalDataScreen(
                     isArabic = isArabic,
                     onSave = { card, isNew -> viewModel.saveTextCard(card, isNew) },
                     onDelete = { id -> viewModel.deleteTextCard(id) },
-                    onDeleteWithUndo = { card -> requestDelete(listOf(card)) },
+                    onDeleteWithUndo = { card -> requestDelete(listOf(card), emptyList()) },
                     onClose = { editorRequest = null }
+                )
+            }
+        }
+
+        // Full-screen checklist editor (create + edit, autosaves)
+        checklistEditorRequest?.let { request ->
+            key(request.key) {
+                ChecklistEditorDialog(
+                    checklist = request.checklist,
+                    initialFolderId = uiState.currentFolder?.id,
+                    folders = uiState.folders,
+                    isArabic = isArabic,
+                    onSave = { list, isNew -> viewModel.saveChecklist(list, isNew) },
+                    onDelete = { id -> viewModel.deleteChecklist(id) },
+                    onDeleteWithUndo = { list -> requestDelete(emptyList(), listOf(list)) },
+                    onClose = { checklistEditorRequest = null }
                 )
             }
         }
@@ -421,6 +475,37 @@ private data class EditorRequest(
     val card: TextCard?,
     val key: Long = System.nanoTime()
 )
+
+/** Same idea as [EditorRequest], for the checklist editor. */
+private data class ChecklistEditorRequest(
+    val checklist: Checklist?,
+    val key: Long = System.nanoTime()
+)
+
+/** One tile in the grid: a text card or a checklist. */
+private sealed interface DataEntry {
+    val id: String
+    val title: String
+    val folderId: String?
+    val isFavorite: Boolean
+    val updatedAt: Long
+
+    data class Note(val card: TextCard) : DataEntry {
+        override val id get() = card.id
+        override val title get() = card.title
+        override val folderId get() = card.folderId
+        override val isFavorite get() = card.isFavorite
+        override val updatedAt get() = card.updatedAt
+    }
+
+    data class Todo(val checklist: Checklist) : DataEntry {
+        override val id get() = checklist.id
+        override val title get() = checklist.title
+        override val folderId get() = checklist.folderId
+        override val isFavorite get() = checklist.isFavorite
+        override val updatedAt get() = checklist.updatedAt
+    }
+}
 
 /** Contextual bar shown instead of the search pill while cards are selected. */
 @Composable
