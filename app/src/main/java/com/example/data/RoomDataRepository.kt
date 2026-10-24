@@ -1,20 +1,24 @@
 package com.example.data
 
+import com.example.data.local.ChecklistDao
 import com.example.data.local.FolderDao
 import com.example.data.local.SyncTombstoneDao
 import com.example.data.local.SyncTombstoneEntity
 import com.example.data.local.TextCardDao
 import com.example.data.local.toDomain
 import com.example.data.local.toEntity
+import com.example.model.Checklist
 import com.example.model.Folder
 import com.example.model.TextCard
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class RoomDataRepository(
     private val folderDao: FolderDao,
     private val textCardDao: TextCardDao,
-    private val syncTombstoneDao: SyncTombstoneDao? = null
+    private val syncTombstoneDao: SyncTombstoneDao? = null,
+    private val checklistDao: ChecklistDao? = null
 ) : DataRepository {
 
     override fun getFolders(): Flow<List<Folder>> {
@@ -25,6 +29,13 @@ class RoomDataRepository(
 
     override fun getTextCards(): Flow<List<TextCard>> {
         return textCardDao.getAllCards().map { list ->
+            list.map { it.toDomain() }
+        }
+    }
+
+    override fun getChecklists(): Flow<List<Checklist>> {
+        val dao = checklistDao ?: return flowOf(emptyList())
+        return dao.getAllChecklists().map { list ->
             list.map { it.toDomain() }
         }
     }
@@ -43,6 +54,15 @@ class RoomDataRepository(
 
     override suspend fun deleteFolder(folderId: String) {
         textCardDao.deleteCardsByFolder(folderId)
+        checklistDao?.let { dao ->
+            // Each checklist needs its own tombstone, otherwise the cloud copy would come back
+            dao.getChecklistsByFolderSync(folderId).forEach { c ->
+                syncTombstoneDao?.insertTombstone(
+                    SyncTombstoneEntity(entityType = "CHECKLIST", entityId = c.id)
+                )
+            }
+            dao.deleteChecklistsByFolder(folderId)
+        }
         folderDao.deleteFolder(folderId)
         syncTombstoneDao?.insertTombstone(
             SyncTombstoneEntity(
@@ -77,5 +97,34 @@ class RoomDataRepository(
 
     override suspend fun moveCardToFolder(cardId: String, newFolderId: String?) {
         textCardDao.moveCardToFolder(cardId, newFolderId)
+    }
+
+    override suspend fun addChecklist(checklist: Checklist) {
+        checklistDao?.insertChecklist(checklist.toEntity())
+    }
+
+    override suspend fun updateChecklist(checklist: Checklist) {
+        checklistDao?.updateChecklist(checklist.toEntity(updatedAt = System.currentTimeMillis()))
+    }
+
+    override suspend fun deleteChecklist(checklistId: String) {
+        val dao = checklistDao ?: return
+        dao.deleteChecklist(checklistId)
+        syncTombstoneDao?.insertTombstone(
+            SyncTombstoneEntity(
+                entityType = "CHECKLIST",
+                entityId = checklistId
+            )
+        )
+    }
+
+    override suspend fun toggleChecklistFavorite(checklistId: String) {
+        val dao = checklistDao ?: return
+        val existing = dao.getChecklistById(checklistId) ?: return
+        dao.setFavorite(checklistId, !existing.isFavorite)
+    }
+
+    override suspend fun moveChecklistToFolder(checklistId: String, newFolderId: String?) {
+        checklistDao?.moveToFolder(checklistId, newFolderId)
     }
 }
