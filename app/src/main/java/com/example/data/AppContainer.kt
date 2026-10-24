@@ -69,7 +69,7 @@ object AppContainer {
                     val tombstoneDao = db.syncTombstoneDao()
                     _taskRepository = RoomTaskRepository(db.taskDao(), tombstoneDao)
                     _habitRepository = RoomHabitRepository(db.habitDao(), context.applicationContext, tombstoneDao)
-                    _dataRepository = RoomDataRepository(db.folderDao(), db.textCardDao(), tombstoneDao)
+                    _dataRepository = RoomDataRepository(db.folderDao(), db.textCardDao(), tombstoneDao, db.checklistDao())
                     _surveyRepository = RoomSurveyRepository(db.surveyDao(), tombstoneDao)
                     _goalRepository = RoomGoalRepository(db.goalDao(), tombstoneDao)
 
@@ -85,7 +85,7 @@ object AppContainer {
                         object : InvalidationTracker.Observer(
                             arrayOf(
                                 "tasks", "habits", "habit_completions", "habit_missed_resolutions",
-                                "folders", "text_cards", "surveys", "survey_questions",
+                                "folders", "text_cards", "checklists", "surveys", "survey_questions",
                                 "survey_responses", "survey_answers", "sync_tombstones",
                                 "goal_plans", "goal_tasks", "goal_checks"
                             )
