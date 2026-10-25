@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +55,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -132,7 +132,6 @@ fun ChecklistEditorDialog(
 
     var showMove by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var scrollTick by remember { mutableIntStateOf(0) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
 
@@ -164,7 +163,6 @@ fun ChecklistEditorDialog(
         if (text.isEmpty()) return
         items.add(ChecklistItem(text = text))
         newItemText = ""
-        scrollTick++
     }
 
     fun updateItem(id: String, transform: (ChecklistItem) -> ChecklistItem) {
@@ -190,7 +188,7 @@ fun ChecklistEditorDialog(
         val snap = snapshot()
         val text = buildString {
             if (snap.title.isNotBlank()) appendLine(snap.title)
-            snap.items.forEach { item ->
+            (snap.items.filter { !it.isDone } + snap.items.filter { it.isDone }).forEach { item ->
                 append(if (item.isDone) "[x] " else "[ ] ")
                 append(item.text)
                 if (item.isDone && item.rating > 0) append(" - ${item.rating}/10")
@@ -257,12 +255,6 @@ fun ChecklistEditorDialog(
     BackHandler { close() }
 
     val scrollState = rememberScrollState()
-    LaunchedEffect(scrollTick) {
-        if (scrollTick > 0) {
-            delay(60)
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
 
     val titleFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
@@ -418,7 +410,9 @@ fun ChecklistEditorDialog(
                         )
                     }
 
-                    items.toList().forEach { item ->
+                    val undoneItems = items.filter { !it.isDone }
+                    val doneItems = items.filter { it.isDone }
+                    val itemContent: @Composable (ChecklistItem) -> Unit = { item ->
                         key(item.id) {
                             ChecklistItemRow(
                                 item = item,
@@ -438,6 +432,9 @@ fun ChecklistEditorDialog(
                             )
                         }
                     }
+
+                    // Not done yet: on top, followed by the add-item row
+                    undoneItems.forEach { itemContent(it) }
 
                     // Add-item row: "done" on the keyboard adds the item and keeps the keyboard open
                     Row(
@@ -476,6 +473,27 @@ fun ChecklistEditorDialog(
                                 .focusRequester(addFocus)
                                 .testTag("checklist_add_item_input")
                         )
+                    }
+                    // Done: below a small divider
+                    if (doneItems.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isArabic) "مكتمل (${doneItems.size})" else "Done (${doneItems.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        }
+                        doneItems.forEach { itemContent(it) }
                     }
                     Spacer(modifier = Modifier.height(120.dp))
                 }
