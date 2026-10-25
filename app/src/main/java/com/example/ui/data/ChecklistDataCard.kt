@@ -137,7 +137,8 @@ fun ChecklistDataCard(
             }
             Spacer(modifier = Modifier.height(8.dp))
 
-            checklist.items.take(MAX_PREVIEW_ITEMS).forEach { item ->
+            (checklist.items.filter { !it.isDone } + checklist.items.filter { it.isDone })
+                .take(MAX_PREVIEW_ITEMS).forEach { item ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
