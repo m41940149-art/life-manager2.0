@@ -96,6 +96,18 @@ class InMemoryTaskRepository : TaskRepository {
     }
 
     override suspend fun toggleTaskCompletion(taskId: String) {
+        val target = _tasks.value.find { it.id == taskId }
+        if (target != null && !target.isCompleted && target.isRecurring && target.seriesId != null) {
+            val hasPending = _tasks.value.any {
+                it.seriesId == target.seriesId && !it.isCompleted && it.dueDate > target.dueDate
+            }
+            val next = com.example.util.TaskRecurrence.nextOccurrenceAfter(
+                maxOf(target.dueDate, DateTimeUtils.getTodayStartOfDay()), target.recurrenceDays
+            )
+            if (!hasPending && next != null) {
+                _tasks.update { listOf(target.copy(id = java.util.UUID.randomUUID().toString(), dueDate = next, isCompleted = false, completedAt = null)) + it }
+            }
+        }
         _tasks.update { list ->
             list.map { task ->
                 if (task.id == taskId) {
