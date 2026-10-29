@@ -2,6 +2,7 @@ package com.example.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.example.model.RecurrenceType
 import com.example.model.Task
 import com.example.model.TaskPriority
 
@@ -25,8 +26,16 @@ data class TaskEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val priority: String = "MEDIUM",
     val category: String = "عام",
-    val syncStatus: String = SyncStatus.PENDING_SYNC.name
+    val syncStatus: String = SyncStatus.PENDING_SYNC.name,
+    val recurrenceType: String = "NONE",
+    val recurrenceDays: String = "", // comma separated Calendar day numbers, e.g. "1,4,5"
+    val seriesId: String? = null
 )
+
+fun parseRecurrenceDays(csv: String?): Set<Int> =
+    csv.orEmpty().split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..7 }.toSet()
+
+fun Set<Int>.toRecurrenceCsv(): String = sorted().joinToString(",")
 
 fun TaskEntity.toDomain(): Task = Task(
     id = id,
@@ -42,7 +51,10 @@ fun TaskEntity.toDomain(): Task = Task(
     } catch (_: Exception) {
         TaskPriority.MEDIUM
     },
-    category = category
+    category = category,
+    recurrenceType = RecurrenceType.fromName(recurrenceType),
+    recurrenceDays = parseRecurrenceDays(recurrenceDays),
+    seriesId = seriesId
 )
 
 fun Task.toEntity(
@@ -60,5 +72,8 @@ fun Task.toEntity(
     updatedAt = updatedAt,
     priority = priority.name,
     category = category,
-    syncStatus = syncStatus.name
+    syncStatus = syncStatus.name,
+    recurrenceType = recurrenceType.name,
+    recurrenceDays = recurrenceDays.toRecurrenceCsv(),
+    seriesId = seriesId
 )
