@@ -271,7 +271,10 @@ class FirestoreSyncManager(
                 "completedAt" to task.completedAt,
                 "updatedAt" to task.updatedAt,
                 "priority" to task.priority,
-                "category" to task.category
+                "category" to task.category,
+                "recurrenceType" to task.recurrenceType,
+                "recurrenceDays" to task.recurrenceDays,
+                "seriesId" to task.seriesId
             )
             pushIfChanged(tasksCol.document(task.id), taskMap)
         }
@@ -295,7 +298,10 @@ class FirestoreSyncManager(
                     updatedAt = remoteUpdatedAt,
                     priority = doc.getString("priority") ?: "MEDIUM",
                     category = doc.getString("category") ?: "عام",
-                    syncStatus = SyncStatus.SYNCED.name
+                    syncStatus = SyncStatus.SYNCED.name,
+                    recurrenceType = doc.getString("recurrenceType") ?: "NONE",
+                    recurrenceDays = doc.getString("recurrenceDays") ?: "",
+                    seriesId = doc.getString("seriesId")
                 )
                 database.taskDao().insertTask(newTask)
             } else if (remoteUpdatedAt > localTask.updatedAt) {
@@ -309,6 +315,9 @@ class FirestoreSyncManager(
                     updatedAt = remoteUpdatedAt,
                     priority = doc.getString("priority") ?: localTask.priority,
                     category = doc.getString("category") ?: localTask.category,
+                    recurrenceType = doc.getString("recurrenceType") ?: "NONE",
+                    recurrenceDays = doc.getString("recurrenceDays") ?: "",
+                    seriesId = doc.getString("seriesId"),
                     syncStatus = SyncStatus.SYNCED.name
                 )
                 database.taskDao().updateTask(updatedTask)
