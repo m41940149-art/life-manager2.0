@@ -334,7 +334,7 @@ fun TasksScreen(
                     showAddSheet = false
                     viewModel.setTaskToEdit(null)
                 },
-                onSubmit = { title, description, dueDate, dueTime, priority, category ->
+                onSubmit = { title, description, dueDate, dueTime, priority, category, recurrenceType, recurrenceDays ->
                     if (taskToEdit != null) {
                         viewModel.updateTask(
                             id = taskToEdit!!.id,
@@ -343,7 +343,9 @@ fun TasksScreen(
                             dueDate = dueDate,
                             dueTime = dueTime,
                             priority = priority,
-                            category = category
+                            category = category,
+                            recurrenceType = recurrenceType,
+                            recurrenceDays = recurrenceDays
                         )
                     } else {
                         viewModel.addTask(
@@ -352,7 +354,9 @@ fun TasksScreen(
                             dueDate = dueDate,
                             dueTime = dueTime,
                             priority = priority,
-                            category = category
+                            category = category,
+                            recurrenceType = recurrenceType,
+                            recurrenceDays = recurrenceDays
                         )
                     }
                 }
