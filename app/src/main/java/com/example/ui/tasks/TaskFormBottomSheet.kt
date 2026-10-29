@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,9 +55,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.RecurrenceType
 import com.example.model.Task
 import com.example.model.TaskPriority
 import com.example.util.DateTimeUtils
+import java.util.Calendar
+import java.util.Locale
 
 enum class QuickDateOption(val titleAr: String, val titleEn: String) {
     TODAY("اليوم", "Today"),
@@ -74,7 +80,9 @@ fun TaskFormBottomSheet(
         dueDate: Long,
         dueTime: String?,
         priority: TaskPriority,
-        category: String
+        category: String,
+        recurrenceType: RecurrenceType,
+        recurrenceDays: Set<Int>
     ) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -104,6 +112,29 @@ fun TaskFormBottomSheet(
 
     var showDatePickerDialog by remember { mutableStateOf(false) }
     var titleError by remember { mutableStateOf(false) }
+
+    var recurrenceType by remember { mutableStateOf(taskToEdit?.recurrenceType ?: RecurrenceType.NONE) }
+    var customDays by remember {
+        mutableStateOf(
+            taskToEdit?.takeIf { it.recurrenceType == RecurrenceType.CUSTOM }?.recurrenceDays ?: emptySet()
+        )
+    }
+    var daysError by remember { mutableStateOf(false) }
+
+    // Calendar.SUNDAY(1) .. Calendar.SATURDAY(7)
+    val daysInfo = if (isArabic) {
+        listOf(
+            Calendar.SUNDAY to "الأحد", Calendar.MONDAY to "الإثنين", Calendar.TUESDAY to "الثلاثاء",
+            Calendar.WEDNESDAY to "الأربعاء", Calendar.THURSDAY to "الخميس",
+            Calendar.FRIDAY to "الجمعة", Calendar.SATURDAY to "السبت"
+        )
+    } else {
+        listOf(
+            Calendar.SUNDAY to "Sun", Calendar.MONDAY to "Mon", Calendar.TUESDAY to "Tue",
+            Calendar.WEDNESDAY to "Wed", Calendar.THURSDAY to "Thu",
+            Calendar.FRIDAY to "Fri", Calendar.SATURDAY to "Sat"
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -270,6 +301,104 @@ fun TaskFormBottomSheet(
 
             Spacer(modifier = Modifier.height(18.dp))
 
+            // Repeat Selector
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Repeat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isArabic) "التكرار" else "Repeat",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RecurrenceType.values().forEach { type ->
+                    FilterChip(
+                        selected = recurrenceType == type,
+                        onClick = {
+                            recurrenceType = type
+                            if (type != RecurrenceType.CUSTOM) daysError = false
+                        },
+                        label = { Text(if (isArabic) type.titleAr else type.titleEn) },
+                        modifier = Modifier.testTag("recurrence_${type.name.lowercase()}"),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = recurrenceType == RecurrenceType.CUSTOM) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Text(
+                        text = if (isArabic) "اختر أيام التكرار:" else "Select repeat days:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (daysError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        daysInfo.forEach { (dayInt, label) ->
+                            val isSelected = customDays.contains(dayInt)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clickable {
+                                        customDays = if (isSelected) customDays - dayInt else customDays + dayInt
+                                        daysError = false
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = label.take(2),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (daysError) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isArabic) "اختر يوماً واحداً على الأقل" else "Pick at least one day",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            if (recurrenceType == RecurrenceType.WEEKLY) {
+                val weekdayName = java.text.SimpleDateFormat("EEEE", if (isArabic) Locale("ar") else Locale.ENGLISH)
+                    .format(java.util.Date(selectedDueDate))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (isArabic) "تتكرر كل $weekdayName" else "Repeats every $weekdayName",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
             // Time Selection (Optional)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -408,6 +537,8 @@ fun TaskFormBottomSheet(
                 onClick = {
                     if (title.isBlank()) {
                         titleError = true
+                    } else if (recurrenceType == RecurrenceType.CUSTOM && customDays.isEmpty()) {
+                        daysError = true
                     } else {
                         onSubmit(
                             title,
@@ -415,7 +546,9 @@ fun TaskFormBottomSheet(
                             selectedDueDate,
                             dueTime.ifBlank { null },
                             priority,
-                            category
+                            category,
+                            recurrenceType,
+                            if (recurrenceType == RecurrenceType.CUSTOM) customDays else emptySet()
                         )
                         onDismiss()
                     }
