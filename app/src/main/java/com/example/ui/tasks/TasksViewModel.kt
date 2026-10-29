@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppContainer
 import com.example.data.TaskRepository
+import com.example.model.RecurrenceType
 import com.example.model.Task
 import com.example.model.TaskPriority
 import com.example.util.DateTimeUtils
+import com.example.util.TaskRecurrence
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -183,17 +185,26 @@ class TasksViewModel(
         dueDate: Long,
         dueTime: String?,
         priority: TaskPriority,
-        category: String
+        category: String,
+        recurrenceType: RecurrenceType = RecurrenceType.NONE,
+        recurrenceDays: Set<Int> = emptySet()
     ) {
         viewModelScope.launch {
+            val days = TaskRecurrence.effectiveDays(recurrenceType, recurrenceDays, dueDate)
+            // For "specific days", the first occurrence is the first matching day on/after the chosen date.
+            val firstDate = if (recurrenceType == RecurrenceType.CUSTOM) {
+                TaskRecurrence.firstOccurrenceOnOrAfter(dueDate, days)
+            } else dueDate
             val newTask = Task(
                 title = title.trim(),
                 description = description.trim(),
-                dueDate = dueDate,
+                dueDate = firstDate,
                 dueTime = dueTime?.trim().takeIf { !it.isNullOrBlank() },
                 priority = priority,
-                category = category.trim().ifBlank { "عام" }
-            )
+                category = category.trim().ifBlank { "عام" },
+                recurrenceType = recurrenceType,
+                recurrenceDays = days
+            ).let { if (recurrenceType != RecurrenceType.NONE) it.copy(seriesId = it.id) else it }
             repository.addTask(newTask)
         }
     }
@@ -205,11 +216,17 @@ class TasksViewModel(
         dueDate: Long,
         dueTime: String?,
         priority: TaskPriority,
-        category: String
+        category: String,
+        recurrenceType: RecurrenceType = RecurrenceType.NONE,
+        recurrenceDays: Set<Int> = emptySet()
     ) {
         viewModelScope.launch {
             val current = uiState.value.allTasks.find { it.id == id } ?: return@launch
+            val days = TaskRecurrence.effectiveDays(recurrenceType, recurrenceDays, dueDate)
             val updated = current.copy(
+                recurrenceType = recurrenceType,
+                recurrenceDays = days,
+                seriesId = if (recurrenceType == RecurrenceType.NONE) null else (current.seriesId ?: current.id),
                 title = title.trim(),
                 description = description.trim(),
                 dueDate = dueDate,
