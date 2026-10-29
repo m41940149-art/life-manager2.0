@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.RecurrenceType
 import com.example.model.Task
 import com.example.model.TaskPriority
 import com.example.ui.components.BadgeChip
@@ -222,6 +224,28 @@ fun TaskItemCard(
                             text = task.dueTime,
                             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
                             contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    // Repeat Badge
+                    if (task.isRecurring) {
+                        val repeatText = when (task.recurrenceType) {
+                            RecurrenceType.DAILY -> if (isArabic) "يومياً" else "Daily"
+                            RecurrenceType.WEEKLY -> if (isArabic) "أسبوعياً" else "Weekly"
+                            else -> {
+                                val names = if (isArabic) {
+                                    mapOf(1 to "الأحد", 2 to "الإثنين", 3 to "الثلاثاء", 4 to "الأربعاء", 5 to "الخميس", 6 to "الجمعة", 7 to "السبت")
+                                } else {
+                                    mapOf(1 to "Sun", 2 to "Mon", 3 to "Tue", 4 to "Wed", 5 to "Thu", 6 to "Fri", 7 to "Sat")
+                                }
+                                task.recurrenceDays.sorted().joinToString("، ") { names[it] ?: "" }
+                            }
+                        }
+                        BadgeChip(
+                            icon = Icons.Default.Repeat,
+                            text = repeatText,
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
 
