@@ -42,9 +42,11 @@ fun DeleteTaskConfirmationDialog(
         text = {
             Text(
                 text = if (isArabic) {
-                    "هل أنت متأكد من رغبتك في حذف المهمة \"${task.title}\" نهائياً؟ لن يمكنك التراجع عن هذا الإجراء."
+                    "هل أنت متأكد من رغبتك في حذف المهمة \"${task.title}\" نهائياً؟ لن يمكنك التراجع عن هذا الإجراء." +
+                        if (task.isRecurring && !task.isCompleted) "\nسيتوقف تكرار هذه المهمة." else ""
                 } else {
-                    "Are you sure you want to permanently delete \"${task.title}\"? This action cannot be undone."
+                    "Are you sure you want to permanently delete \"${task.title}\"? This action cannot be undone." +
+                        if (task.isRecurring && !task.isCompleted) "\nThis will also stop the repetition." else ""
                 },
                 style = MaterialTheme.typography.bodyMedium
             )
