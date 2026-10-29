@@ -7,6 +7,9 @@ import com.example.data.local.TaskDao
 import com.example.data.local.toDomain
 import com.example.data.local.toEntity
 import com.example.model.Task
+import com.example.util.DateTimeUtils
+import com.example.util.TaskRecurrence
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -62,6 +65,36 @@ class RoomTaskRepository(
             completedAt = completedAt,
             updatedAt = updatedAt,
             syncStatus = SyncStatus.PENDING_SYNC.name
+        )
+
+        val task = entity.toDomain()
+        val seriesId = task.seriesId
+        if (!task.isRecurring || seriesId == null) return
+
+        if (willBeCompleted) {
+            spawnNextOccurrence(task, seriesId)
+        } else {
+            // Un-completing: remove the occurrence that was auto-created after it.
+            taskDao.getPendingInSeriesAfter(seriesId, task.dueDate).forEach { deleteTask(it.id) }
+        }
+    }
+
+    /**
+     * Creates the next occurrence of a repeating task after it is completed.
+     * Based on the later of (due date, today) so completing late never creates a past task.
+     */
+    private suspend fun spawnNextOccurrence(task: Task, seriesId: String) {
+        if (taskDao.getPendingInSeriesAfter(seriesId, task.dueDate).isNotEmpty()) return
+        val base = maxOf(task.dueDate, DateTimeUtils.getTodayStartOfDay())
+        val nextDate = TaskRecurrence.nextOccurrenceAfter(base, task.recurrenceDays) ?: return
+        addTask(
+            task.copy(
+                id = UUID.randomUUID().toString(),
+                dueDate = nextDate,
+                isCompleted = false,
+                completedAt = null,
+                createdAt = System.currentTimeMillis()
+            )
         )
     }
 }
