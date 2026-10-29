@@ -37,6 +37,9 @@ interface TaskDao {
         syncStatus: String = SyncStatus.PENDING_SYNC.name
     )
 
+    @Query("SELECT * FROM tasks WHERE seriesId = :seriesId AND isCompleted = 0 AND dueDate > :afterDate AND syncStatus != 'PENDING_DELETE'")
+    suspend fun getPendingInSeriesAfter(seriesId: String, afterDate: Long): List<TaskEntity>
+
     @Query("SELECT COUNT(*) FROM tasks WHERE syncStatus != 'PENDING_DELETE'")
     suspend fun getTaskCount(): Int
 
