@@ -79,6 +79,18 @@ class RoomTaskRepository(
         }
     }
 
+    override suspend fun rollOverMissedRecurringTasks() {
+        val today = DateTimeUtils.getTodayStartOfDay()
+        taskDao.getAllTasksSync()
+            .filter { it.syncStatus != SyncStatus.PENDING_DELETE.name }
+            .map { it.toDomain() }
+            .filter { it.isRecurring && !it.isCompleted && it.dueDate < today }
+            .forEach { task ->
+                val next = TaskRecurrence.firstOccurrenceOnOrAfter(today, task.recurrenceDays)
+                updateTask(task.copy(dueDate = next))
+            }
+    }
+
     /**
      * Creates the next occurrence of a repeating task after it is completed.
      * Based on the later of (due date, today) so completing late never creates a past task.
