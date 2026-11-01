@@ -59,7 +59,11 @@ class TasksViewModel(
     val uiState: StateFlow<TasksUiState> = combine(
         repository.getTasks(),
         _selectedFilter
-    ) { allTasks, filter ->
+    ) { storedTasks, filter ->
+        // Repeating tasks are only listed on their own day (completed ones stay as history).
+        val allTasks = storedTasks.filter {
+            !it.isRecurring || it.isCompleted || DateTimeUtils.isToday(it.dueDate)
+        }
         val todayTasks = allTasks.filter { DateTimeUtils.isToday(it.dueDate) }
         val todayCompleted = todayTasks.count { it.isCompleted }
         val overdueTasks = allTasks.filter { !it.isCompleted && DateTimeUtils.isPast(it.dueDate) }
@@ -152,6 +156,11 @@ class TasksViewModel(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = TasksUiState()
     )
+
+    init {
+        // A repeating task that was not done on its day moves on to its next scheduled day.
+        viewModelScope.launch { repository.rollOverMissedRecurringTasks() }
+    }
 
     fun setFilter(filter: TaskFilter) {
         _selectedFilter.value = filter
