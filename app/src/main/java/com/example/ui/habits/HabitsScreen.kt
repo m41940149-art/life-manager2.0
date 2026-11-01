@@ -194,7 +194,18 @@ fun HabitsScreen(
             }
 
             // Habits List or Empty State
-            if (uiState.habits.isEmpty()) {
+            if (uiState.habits.isEmpty() && uiState.hasAnyHabits) {
+                EmptyStateView(
+                    icon = Icons.Default.Loop,
+                    title = if (isArabic) "لا توجد عادات لهذا اليوم" else "No habits scheduled today",
+                    subtitle = if (isArabic) {
+                        "عاداتك ستظهر هنا في الأيام المحددة لها فقط."
+                    } else {
+                        "Your habits will show up here on their scheduled days only."
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            } else if (uiState.habits.isEmpty()) {
                 EmptyStateView(
                     icon = Icons.Default.Loop,
                     title = if (isArabic) "لا توجد عادات مضافة بعد" else "No habits created yet",
