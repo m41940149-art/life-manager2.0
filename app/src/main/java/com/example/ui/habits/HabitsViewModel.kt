@@ -13,12 +13,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class HabitsUiState(
     val habits: List<Habit> = emptyList(),
+    // True when the user owns at least one habit, even if none is scheduled today.
+    val hasAnyHabits: Boolean = false,
     val completedTodayCount: Int = 0,
     val totalCount: Int = 0,
     val maxStreakAcrossHabits: Int = 0,
@@ -48,14 +51,17 @@ class HabitsViewModel(
         completionsForSelectedHabit,
         _forgotRecordHabit,
         _missedOccurrenceDate
-    ) { habits, selectedHabit, completions, forgotHabit, missedDate ->
+    ) { allHabits, selectedHabit, completions, forgotHabit, missedDate ->
+        // A habit is only listed on the days it is scheduled for.
+        val habits = allHabits.filter { it.isScheduledToday }
         val completedToday = habits.count { it.isCompletedToday }
-        val maxStreak = habits.maxOfOrNull { it.currentStreak } ?: 0
+        val maxStreak = allHabits.maxOfOrNull { it.currentStreak } ?: 0
 
-        val currentSelectedHabit = habits.find { it.id == selectedHabit?.id } ?: selectedHabit
+        val currentSelectedHabit = allHabits.find { it.id == selectedHabit?.id } ?: selectedHabit
 
         HabitsUiState(
             habits = habits,
+            hasAnyHabits = allHabits.isNotEmpty(),
             completedTodayCount = completedToday,
             totalCount = habits.size,
             maxStreakAcrossHabits = maxStreak,
@@ -101,9 +107,15 @@ class HabitsViewModel(
         }
     }
 
-    fun reorderHabits(orderedHabitIds: List<String>) {
+    fun reorderHabits(orderedVisibleIds: List<String>) {
         viewModelScope.launch {
-            repository.reorderHabits(orderedHabitIds)
+            // Only today's habits are on screen: put them back into the slots they occupy
+            // in the full list so the hidden habits keep their relative positions.
+            val allIds = repository.getHabits().first().map { it.id }
+            val visible = orderedVisibleIds.toSet()
+            val next = orderedVisibleIds.iterator()
+            val merged = allIds.map { if (it in visible && next.hasNext()) next.next() else it }
+            repository.reorderHabits(merged)
         }
     }
 
