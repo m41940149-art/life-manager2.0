@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
@@ -35,6 +36,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +68,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.TimerSessionEntity
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -78,6 +82,27 @@ enum class SessionType(
     STUDY("دراسة", "Study", Icons.Filled.MenuBook, "session_study"),
     LEARNING("تعلم", "Learning", Icons.Filled.School, "session_learning"),
     WORK("عمل", "Work", Icons.Filled.Work, "session_work")
+}
+
+/** Periods the history summary can cover. `days == null` means all time. */
+enum class HistoryPeriod(val days: Int?, val labelAr: String, val labelEn: String) {
+    TODAY(1, "اليوم", "Today"),
+    TWO_DAYS(2, "يومان", "2 days"),
+    WEEK(7, "7 أيام", "7 days"),
+    TEN_DAYS(10, "10 أيام", "10 days"),
+    MONTH(30, "30 يومًا", "30 days"),
+    ALL(null, "الكل", "All")
+}
+
+/** Start of the window: midnight of (today - (days - 1)), so "1 day" means today only. */
+private fun periodStartMillis(days: Int): Long {
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    cal.add(Calendar.DAY_OF_YEAR, -(days - 1))
+    return cal.timeInMillis
 }
 
 @Composable
@@ -432,6 +457,7 @@ private fun SessionTypeDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionHistoryScreen(
     sessions: List<TimerSessionEntity>,
@@ -441,6 +467,16 @@ private fun SessionHistoryScreen(
     modifier: Modifier = Modifier
 ) {
     var sessionToDelete by rememberSaveable { mutableStateOf<String?>(null) }
+    var periodName by rememberSaveable { mutableStateOf(HistoryPeriod.WEEK.name) }
+    val period = HistoryPeriod.values().firstOrNull { it.name == periodName } ?: HistoryPeriod.WEEK
+    val filtered = remember(sessions, period) {
+        val days = period.days
+        if (days == null) sessions
+        else {
+            val start = periodStartMillis(days)
+            sessions.filter { it.startedAt >= start }
+        }
+    }
     val dateFormat = remember(isArabic) {
         SimpleDateFormat("EEE d MMM yyyy، h:mm a", if (isArabic) Locale("ar") else Locale.getDefault())
     }
@@ -460,10 +496,83 @@ private fun SessionHistoryScreen(
             )
         }
 
-        if (sessions.isEmpty()) {
+        // Period selector
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(vertical = 8.dp).testTag("history_period_row")
+        ) {
+            items(HistoryPeriod.values().toList()) { p ->
+                FilterChip(
+                    selected = p == period,
+                    onClick = { periodName = p.name },
+                    label = { Text(if (isArabic) p.labelAr else p.labelEn) },
+                    modifier = Modifier.testTag("period_" + p.name.lowercase())
+                )
+            }
+        }
+
+        // Per-type summary: time spent and goal completion
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).testTag("history_summary")
+        ) {
+            SessionType.values().forEach { type ->
+                val ofType = filtered.filter { it.type == type.name }
+                val spentMs = ofType.sumOf { it.durationMs }
+                val goalMs = ofType.sumOf { it.goalMinutes * 60_000L }
+                val percent = if (goalMs > 0) (spentMs * 100 / goalMs).toInt() else null
+                Card(modifier = Modifier.weight(1f).testTag("summary_" + type.name.lowercase())) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            type.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = if (isArabic) type.titleAr else type.titleEn,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = formatDuration(spentMs, isArabic),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { ((percent ?: 0) / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (percent != null) "$percent%" else "—",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = if (isArabic) "النسبة = الوقت المنجز ÷ مجموع أهداف الجلسات" else "Percent = time done ÷ total session goals",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+
+        if (filtered.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = if (isArabic) "لا توجد جلسات بعد" else "No sessions yet",
+                    text = if (sessions.isEmpty()) {
+                        if (isArabic) "لا توجد جلسات بعد" else "No sessions yet"
+                    } else {
+                        if (isArabic) "لا توجد جلسات في هذه المدة" else "No sessions in this period"
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("history_empty")
                 )
@@ -471,8 +580,8 @@ private fun SessionHistoryScreen(
         } else {
             Text(
                 text = (if (isArabic) "إجمالي الوقت: " else "Total time: ") +
-                    formatElapsed(sessions.sumOf { it.durationMs }) +
-                    "  •  " + sessions.size + (if (isArabic) " جلسة" else " sessions"),
+                    formatElapsed(filtered.sumOf { it.durationMs }) +
+                    "  •  " + filtered.size + (if (isArabic) " جلسة" else " sessions"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             )
@@ -480,7 +589,7 @@ private fun SessionHistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f).testTag("history_list")
             ) {
-                items(sessions, key = { it.id }) { session ->
+                items(filtered, key = { it.id }) { session ->
                     val type = SessionType.values().firstOrNull { it.name == session.type }
                     val reached = session.durationMs >= session.goalMinutes * 60_000L
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -579,6 +688,17 @@ private fun formatHours(minutes: Int, isArabic: Boolean): String {
     val text = if (minutes % 60 == 0) (minutes / 60).toString()
     else "%.1f".format(Locale.US, hours).trimEnd('0').trimEnd('.')
     return text + if (isArabic) " ساعة" else " h"
+}
+
+private fun formatDuration(ms: Long, isArabic: Boolean): String {
+    val totalMinutes = ms / 60_000
+    val h = totalMinutes / 60
+    val m = totalMinutes % 60
+    return when {
+        h == 0L -> "$m" + if (isArabic) " د" else " m"
+        m == 0L -> "$h" + if (isArabic) " س" else " h"
+        else -> if (isArabic) "$h س $m د" else "${h}h ${m}m"
+    }
 }
 
 private fun formatElapsed(ms: Long): String {
