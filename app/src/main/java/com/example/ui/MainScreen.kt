@@ -31,6 +31,7 @@ import com.example.ui.surveys.SurveysScreen
 import com.example.ui.surveys.SurveysViewModel
 import com.example.ui.tasks.TasksScreen
 import com.example.ui.tasks.TasksViewModel
+import com.example.ui.timer.TimerScreen
 
 @Composable
 fun MainScreen(
@@ -128,6 +129,9 @@ fun MainScreen(
                                 viewModel = surveysViewModel,
                                 isArabic = isArabic
                             )
+                        }
+                        AppTab.TIMER -> {
+                            TimerScreen(isArabic = isArabic)
                         }
                     }
                 }
