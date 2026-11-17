@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.InvalidationTracker
 import com.example.auth.AuthManager
 import com.example.data.local.LifeManagerDatabase
+import com.example.data.local.TimerSessionDao
 import com.example.sync.FirestoreSyncManager
 import com.example.sync.SyncPreferences
 import com.example.sync.SyncWorker
@@ -26,6 +27,9 @@ object AppContainer {
 
     @Volatile
     private var _goalRepository: GoalRepository? = null
+
+    @Volatile
+    private var _timerSessionDao: TimerSessionDao? = null
 
     @Volatile
     private var _syncPreferences: SyncPreferences? = null
@@ -51,6 +55,9 @@ object AppContainer {
     val goalRepository: GoalRepository
         get() = _goalRepository ?: throw IllegalStateException("AppContainer is not initialized yet. Call AppContainer.initialize(context)")
 
+    val timerSessionDao: TimerSessionDao
+        get() = _timerSessionDao ?: throw IllegalStateException("AppContainer is not initialized yet. Call AppContainer.initialize(context)")
+
     val syncPreferences: SyncPreferences
         get() = _syncPreferences ?: throw IllegalStateException("AppContainer is not initialized yet. Call AppContainer.initialize(context)")
 
@@ -72,6 +79,8 @@ object AppContainer {
                     _dataRepository = RoomDataRepository(db.folderDao(), db.textCardDao(), tombstoneDao, db.checklistDao())
                     _surveyRepository = RoomSurveyRepository(db.surveyDao(), tombstoneDao)
                     _goalRepository = RoomGoalRepository(db.goalDao(), tombstoneDao)
+
+                    _timerSessionDao = db.timerSessionDao()
 
                     val prefs = SyncPreferences(context.applicationContext)
                     _syncPreferences = prefs
