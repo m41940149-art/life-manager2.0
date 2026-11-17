@@ -9,11 +9,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -39,7 +41,8 @@ enum class AppTab(
     HABITS("العادات", "Habits", Icons.Filled.LocalFireDepartment, Icons.Outlined.LocalFireDepartment, "tab_habits"),
     GOALS("الأهداف", "Goals", Icons.Filled.Flag, Icons.Outlined.Flag, "tab_goals"),
     DATA("البيانات", "Data", Icons.Filled.Folder, Icons.Outlined.Folder, "tab_data"),
-    SURVEYS("الاستبيانات", "Surveys", Icons.Filled.Assignment, Icons.Outlined.Assignment, "tab_surveys")
+    SURVEYS("الاستبيانات", "Surveys", Icons.Filled.Assignment, Icons.Outlined.Assignment, "tab_surveys"),
+    TIMER("المؤقت", "Timer", Icons.Filled.Timer, Icons.Outlined.Timer, "tab_timer")
 }
 
 @Composable
