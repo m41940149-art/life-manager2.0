@@ -24,6 +24,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
+import androidx.compose.material3.FilterChip
+import com.example.model.HabitTimeGroup
+import com.example.model.habitTimeGroup
+import com.example.model.isHabitVisibleInPeriod
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.util.Calendar
 import com.example.model.Habit
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,11 +71,36 @@ import com.example.ui.components.EmptyStateView
 fun HabitsScreen(
     viewModel: HabitsViewModel,
     isArabic: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    nowMillis: () -> Long = { System.currentTimeMillis() }
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddSheet by remember { mutableStateOf(false) }
+    var editingHabit by remember { mutableStateOf<Habit?>(null) }
+    var showAllHabits by remember { mutableStateOf(false) }
+    var showAllPeriods by remember { mutableStateOf(false) }
+    var localHour by remember { mutableStateOf(Calendar.getInstance().apply { timeInMillis = nowMillis() }.get(Calendar.HOUR_OF_DAY)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                localHour = Calendar.getInstance().apply { timeInMillis = nowMillis() }.get(Calendar.HOUR_OF_DAY)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            localHour = Calendar.getInstance().apply { timeInMillis = nowMillis() }.get(Calendar.HOUR_OF_DAY)
+            // Re-evaluate at the next minute, including 16:00, using the current local timezone.
+            delay(60_000L - (nowMillis() % 60_000L))
+        }
+    }
+    val habitsForDay = if (showAllHabits) uiState.allHabits else uiState.habits
+    val visibleHabits = habitsForDay.filter { isHabitVisibleInPeriod(it.scheduledTime, localHour, showAllPeriods) }
+
 
     // --- Drag & drop reordering state ---
     val listState = rememberLazyListState()
@@ -74,20 +110,22 @@ fun HabitsScreen(
     var draggingHabitId by remember { mutableStateOf<String?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
 
+    LaunchedEffect(showAllHabits, showAllPeriods, localHour) { orderOverride = null }
+
     // Persisted list, re-ordered by the in-progress / not-yet-persisted drag order.
     val displayedHabits: List<Habit> = run {
         val custom = orderOverride
         if (custom == null) {
-            uiState.habits
+            visibleHabits
         } else {
-            val byId = uiState.habits.associateBy { it.id }
-            uiState.habits.filter { it.id !in custom } + custom.mapNotNull { byId[it] }
+            val byId = visibleHabits.associateBy { it.id }
+            visibleHabits.filter { it.id !in custom } + custom.mapNotNull { byId[it] }
         }
     }
 
     // Drop the temporary override once the database order has caught up with it.
-    LaunchedEffect(uiState.habits) {
-        if (draggingHabitId == null && orderOverride == uiState.habits.map { it.id }) {
+    LaunchedEffect(visibleHabits) {
+        if (draggingHabitId == null && orderOverride == visibleHabits.map { it.id }) {
             orderOverride = null
         }
     }
@@ -193,8 +231,58 @@ fun HabitsScreen(
                 }
             }
 
+            if (uiState.hasAnyHabits) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !showAllHabits,
+                        onClick = { showAllHabits = false },
+                        label = { Text(if (isArabic) "اليوم" else "Today") }
+                    )
+                    FilterChip(
+                        selected = showAllHabits,
+                        onClick = { showAllHabits = true },
+                        label = { Text(if (isArabic) "كل العادات" else "All habits") },
+                        modifier = Modifier.testTag("all_habits_filter")
+                    )
+                }
+            }
+            if (uiState.hasAnyHabits) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !showAllPeriods,
+                        onClick = { showAllPeriods = false },
+                        label = { Text(if (localHour < 16) {
+                            if (isArabic) "الصباح الآن" else "Morning now"
+                        } else {
+                            if (isArabic) "المساء الآن" else "Evening now"
+                        }) },
+                        modifier = Modifier.testTag("current_period_filter")
+                    )
+                    FilterChip(
+                        selected = showAllPeriods,
+                        onClick = { showAllPeriods = true },
+                        label = { Text(if (isArabic) "إظهار كل الفترات" else "Show all periods") },
+                        modifier = Modifier.testTag("all_periods_filter")
+                    )
+                }
+            }
             // Habits List or Empty State
-            if (uiState.habits.isEmpty() && uiState.hasAnyHabits) {
+            if (visibleHabits.isEmpty() && habitsForDay.isNotEmpty()) {
+                EmptyStateView(
+                    icon = Icons.Default.Loop,
+                    title = if (isArabic) "لا توجد عادات لهذه الفترة" else "No habits for this period",
+                    subtitle = if (isArabic) "يمكنك إظهار كل الفترات للوصول إلى العادات الأخرى." else "Show all periods to see your other habits.",
+                    actionButtonText = if (isArabic) "إظهار كل الفترات" else "Show all periods",
+                    onActionClick = { showAllPeriods = true },
+                    modifier = Modifier.weight(1f)
+                )
+            } else if (visibleHabits.isEmpty() && uiState.hasAnyHabits) {
                 EmptyStateView(
                     icon = Icons.Default.Loop,
                     title = if (isArabic) "لا توجد عادات لهذا اليوم" else "No habits scheduled today",
@@ -205,7 +293,7 @@ fun HabitsScreen(
                     },
                     modifier = Modifier.weight(1f)
                 )
-            } else if (uiState.habits.isEmpty()) {
+            } else if (visibleHabits.isEmpty()) {
                 EmptyStateView(
                     icon = Icons.Default.Loop,
                     title = if (isArabic) "لا توجد عادات مضافة بعد" else "No habits created yet",
@@ -225,7 +313,23 @@ fun HabitsScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 88.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(displayedHabits, key = { it.id }) { habit ->
+                    HabitTimeGroup.entries.forEach { group ->
+                        val groupHabits = displayedHabits.filter { habitTimeGroup(it.scheduledTime) == group }
+                        if (groupHabits.isNotEmpty()) {
+                            item(key = "header_$group") {
+                                Text(
+                                    text = when (group) {
+                                        HabitTimeGroup.MORNING -> if (isArabic) "صباحًا · قبل ٤:٠٠ مساءً" else "Morning · before 4:00 PM"
+                                        HabitTimeGroup.AFTERNOON_EVENING -> if (isArabic) "بعد الظهر / مساءً · من ٤:٠٠ مساءً" else "Afternoon / evening · from 4:00 PM"
+                                        HabitTimeGroup.UNSCHEDULED -> if (isArabic) "بدون وقت · عدّل العادة لتحديده" else "No time set · edit to choose a time"
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp).testTag("habit_group_$group")
+                                )
+                            }
+                        }
+                    items(groupHabits, key = { it.id }) { habit ->
                         val isDragging = draggingHabitId == habit.id
 
                         val dragHandleModifier = Modifier.pointerInput(habit.id) {
@@ -247,12 +351,15 @@ fun HabitsScreen(
                                     val centerY = current.offset + current.size / 2f + dragOffsetY
                                     val target = layout.visibleItemsInfo.firstOrNull {
                                         it.key != habit.id &&
+                                            displayedHabits.any { candidate ->
+                                                candidate.id == it.key && habitTimeGroup(candidate.scheduledTime) == group
+                                            } &&
                                             centerY >= it.offset &&
                                             centerY <= it.offset + it.size
                                     }
 
                                     if (target != null) {
-                                        val ids = orderOverride ?: uiState.habits.map { it.id }
+                                        val ids = orderOverride ?: visibleHabits.map { it.id }
                                         val from = ids.indexOf(habit.id)
                                         val to = ids.indexOf(target.key)
                                         if (from != -1 && to != -1 && from != to) {
@@ -287,7 +394,7 @@ fun HabitsScreen(
                                 },
                                 onDragEnd = {
                                     val ordered = orderOverride
-                                    if (ordered != null && ordered != uiState.habits.map { it.id }) {
+                                    if (ordered != null && ordered != visibleHabits.map { it.id }) {
                                         viewModel.reorderHabits(ordered)
                                     } else {
                                         orderOverride = null
@@ -313,6 +420,7 @@ fun HabitsScreen(
                                 viewModel.resolveMissedOccurrence(habitId, dateTimestamp, completed)
                             },
                             onDelete = { viewModel.deleteHabit(habit.id) },
+                            onEdit = { editingHabit = habit },
                             dragHandleModifier = dragHandleModifier,
                             modifier = if (isDragging) {
                                 Modifier
@@ -328,17 +436,25 @@ fun HabitsScreen(
                             }
                         )
                     }
+                    }
                 }
             }
         }
 
         // Add Habit Bottom Sheet
-        if (showAddSheet) {
+        if (showAddSheet || editingHabit != null) {
+            val initial = editingHabit
             AddHabitBottomSheet(
                 isArabic = isArabic,
-                onDismiss = { showAddSheet = false },
-                onAddHabit = { name, description, isEveryDay, daysOfWeek, notificationEnabled, notificationTime, icon, color ->
-                    viewModel.addHabit(
+                initialHabit = initial,
+                onDismiss = { showAddSheet = false; editingHabit = null },
+                onAddHabit = { name, description, isEveryDay, daysOfWeek, notificationEnabled, notificationTime, icon, color, scheduledTime ->
+                    if (initial != null) {
+                        viewModel.updateHabit(
+                            initial.id, name, description, isEveryDay, daysOfWeek,
+                            notificationEnabled, notificationTime, icon, color, scheduledTime
+                        )
+                    } else viewModel.addHabit(
                         name = name,
                         description = description,
                         isEveryDay = isEveryDay,
@@ -346,7 +462,8 @@ fun HabitsScreen(
                         notificationEnabled = notificationEnabled,
                         notificationTime = notificationTime,
                         categoryIcon = icon,
-                        colorHex = color
+                        colorHex = color,
+                        scheduledTime = scheduledTime
                     )
                 }
             )
