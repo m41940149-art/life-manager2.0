@@ -5,6 +5,7 @@ import android.graphics.Color as AndroidColor
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
@@ -14,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.ui.MainScreen
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onStart() {
@@ -27,6 +30,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.data.AppContainer.initialize(applicationContext)
+        // One-time seed of the 28-day study plan into the Tasks tab (no-op after first run).
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                com.example.data.StudyPlanSeeder.seedIfNeeded(
+                    applicationContext,
+                    com.example.data.AppContainer.taskRepository
+                )
+            } catch (_: Exception) {}
+        }
         setContent {
             val systemDark = isSystemInDarkTheme()
             var isDarkTheme by remember { mutableStateOf(systemDark) }
