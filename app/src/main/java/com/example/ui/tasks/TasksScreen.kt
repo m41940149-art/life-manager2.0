@@ -187,36 +187,6 @@ fun TasksScreen(
                 }
             }
 
-            // Filter Chips Row
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(TaskFilter.values()) { filter ->
-                    val selected = uiState.selectedFilter == filter
-                    FilterChip(
-                        selected = selected,
-                        onClick = { viewModel.setFilter(filter) },
-                        label = {
-                            Text(
-                                text = if (isArabic) filter.titleAr else filter.titleEn,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.testTag("filter_chip_${filter.name.lowercase()}")
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.height(4.dp))
 
             // Task Content: Grouped List or Filtered List
