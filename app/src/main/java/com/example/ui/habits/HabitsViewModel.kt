@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 
 data class HabitsUiState(
     val habits: List<Habit> = emptyList(),
+    val allHabits: List<Habit> = emptyList(),
     // True when the user owns at least one habit, even if none is scheduled today.
     val hasAnyHabits: Boolean = false,
     val completedTodayCount: Int = 0,
@@ -61,6 +62,7 @@ class HabitsViewModel(
 
         HabitsUiState(
             habits = habits,
+            allHabits = allHabits,
             hasAnyHabits = allHabits.isNotEmpty(),
             completedTodayCount = completedToday,
             totalCount = habits.size,
@@ -90,7 +92,8 @@ class HabitsViewModel(
         notificationEnabled: Boolean,
         notificationTime: String?,
         categoryIcon: String,
-        colorHex: Long
+        colorHex: Long,
+        scheduledTime: String
     ) {
         viewModelScope.launch {
             val newHabit = Habit(
@@ -101,9 +104,35 @@ class HabitsViewModel(
                 notificationEnabled = notificationEnabled,
                 notificationTime = notificationTime?.trim().takeIf { !it.isNullOrBlank() },
                 categoryIcon = categoryIcon,
-                colorHex = colorHex
+                colorHex = colorHex,
+                scheduledTime = scheduledTime
             )
             repository.addHabit(newHabit)
+        }
+    }
+
+    fun updateHabit(
+        habitId: String,
+        name: String,
+        description: String,
+        isEveryDay: Boolean,
+        daysOfWeek: Set<Int>,
+        notificationEnabled: Boolean,
+        notificationTime: String?,
+        categoryIcon: String,
+        colorHex: Long,
+        scheduledTime: String
+    ) {
+        viewModelScope.launch {
+            // Read the current record, preserving identity, creation time, order and history.
+            val current = repository.getHabits().first().find { it.id == habitId } ?: return@launch
+            repository.updateHabit(current.copy(
+                name = name.trim(), description = description.trim(),
+                isEveryDay = isEveryDay, daysOfWeek = daysOfWeek,
+                notificationEnabled = notificationEnabled,
+                notificationTime = notificationTime?.trim().takeIf { !it.isNullOrBlank() },
+                categoryIcon = categoryIcon, colorHex = colorHex, scheduledTime = scheduledTime
+            ))
         }
     }
 
