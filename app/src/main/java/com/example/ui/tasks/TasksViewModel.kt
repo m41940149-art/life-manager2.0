@@ -18,11 +18,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class TaskFilter(val titleAr: String, val titleEn: String) {
-    ALL("الكل", "All"),
     TODAY("اليوم", "Today"),
-    TOMORROW("غداً", "Tomorrow"),
-    UPCOMING("القادمة", "Upcoming"),
-    COMPLETED("المكتملة", "Completed")
+    ALL("الكل", "All")
 }
 
 data class TaskGroup(
@@ -37,17 +34,19 @@ data class TasksUiState(
     val allTasks: List<Task> = emptyList(),
     val displayedTasks: List<Task> = emptyList(),
     val groupedTasks: List<TaskGroup> = emptyList(),
-    val selectedFilter: TaskFilter = TaskFilter.ALL,
+    val selectedFilter: TaskFilter = TaskFilter.TODAY,
     val todayCompletedCount: Int = 0,
     val todayTotalCount: Int = 0,
     val overdueCount: Int = 0
 )
 
 class TasksViewModel(
-    private val repository: TaskRepository = AppContainer.taskRepository
+    private val repository: TaskRepository = AppContainer.taskRepository,
+    private val startOfToday: () -> Long = { DateTimeUtils.getTodayStartOfDay() },
+    private val dayCheckIntervalMs: Long = 60_000L
 ) : ViewModel() {
 
-    private val _selectedFilter = MutableStateFlow(TaskFilter.ALL)
+    private val _selectedFilter = MutableStateFlow(TaskFilter.TODAY)
     val selectedFilter: StateFlow<TaskFilter> = _selectedFilter.asStateFlow()
 
     private val _taskToDelete = MutableStateFlow<Task?>(null)
@@ -57,26 +56,24 @@ class TasksViewModel(
     val taskToEdit: StateFlow<Task?> = _taskToEdit.asStateFlow()
 
     // Bumped at midnight so the list switches to the new day while the app stays open.
-    private val _dayTick = MutableStateFlow(System.currentTimeMillis())
+    private val _dayTick = MutableStateFlow(startOfToday())
 
     val uiState: StateFlow<TasksUiState> = combine(
         repository.getTasks(),
         _selectedFilter,
         _dayTick
-    ) { storedTasks, filter, _ ->
-        // Only today's tasks are shown; tasks of other dates stay saved and appear on their day.
-        val allTasks = storedTasks.filter { DateTimeUtils.isToday(it.dueDate) }
-        val todayTasks = allTasks.filter { DateTimeUtils.isToday(it.dueDate) }
+    ) { storedTasks, filter, today ->
+        // "Today" shows only today's tasks; "All" shows every saved task grouped by date.
+        // Tasks of other dates stay saved either way; nothing is deleted here.
+        val allTasks = storedTasks
+        val todayTasks = allTasks.filter { DateTimeUtils.getStartOfDay(it.dueDate) == today }
         val todayCompleted = todayTasks.count { it.isCompleted }
         val overdueTasks = allTasks.filter { !it.isCompleted && DateTimeUtils.isPast(it.dueDate) }
 
         // Filtered list
         val filtered = when (filter) {
-            TaskFilter.ALL -> allTasks
             TaskFilter.TODAY -> todayTasks
-            TaskFilter.TOMORROW -> allTasks.filter { DateTimeUtils.isTomorrow(it.dueDate) }
-            TaskFilter.UPCOMING -> allTasks.filter { DateTimeUtils.isUpcoming(it.dueDate) }
-            TaskFilter.COMPLETED -> allTasks.filter { it.isCompleted }
+            TaskFilter.ALL -> allTasks
         }
 
         // Build logical date groups
@@ -119,7 +116,7 @@ class TasksViewModel(
             }
 
             // Upcoming group (later dates)
-            val upcomingTasks = allTasks.filter { !it.isCompleted && DateTimeUtils.isUpcoming(it.dueDate) }
+            val upcomingTasks = allTasks.filter { !it.isCompleted && !DateTimeUtils.isToday(it.dueDate) && !DateTimeUtils.isTomorrow(it.dueDate) && !DateTimeUtils.isPast(it.dueDate) }
             if (upcomingTasks.isNotEmpty()) {
                 groups.add(
                     TaskGroup(
@@ -162,15 +159,17 @@ class TasksViewModel(
     init {
         viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(60_000L)
-                val today = DateTimeUtils.getTodayStartOfDay()
-                if (DateTimeUtils.getStartOfDay(_dayTick.value) != today) {
-                    _dayTick.value = System.currentTimeMillis()
-                }
+                kotlinx.coroutines.delay(dayCheckIntervalMs)
+                val today = startOfToday()
+                if (_dayTick.value != today) _dayTick.value = today
             }
         }
         // A repeating task that was not done on its day moves on to its next scheduled day.
         viewModelScope.launch { repository.rollOverMissedRecurringTasks() }
+    }
+
+    fun refreshCurrentDay() {
+        _dayTick.value = startOfToday()
     }
 
     fun setFilter(filter: TaskFilter) {
