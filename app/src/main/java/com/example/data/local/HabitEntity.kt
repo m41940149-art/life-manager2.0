@@ -13,6 +13,8 @@ data class HabitEntity(
     val description: String = "",
     val isEveryDay: Boolean = true,
     val daysOfWeek: String = "1,2,3,4,5,6,7", // Comma-separated calendar days
+    // Local performance time in HH:mm, independent of optional reminders.
+    val scheduledTime: String? = null,
     val notificationEnabled: Boolean = false,
     val notificationTime: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
@@ -41,6 +43,7 @@ fun Habit.toEntity(
     description = description,
     isEveryDay = isEveryDay,
     daysOfWeek = daysOfWeek.joinToString(","),
+    scheduledTime = scheduledTime,
     notificationEnabled = notificationEnabled,
     notificationTime = notificationTime,
     createdAt = createdAt,
