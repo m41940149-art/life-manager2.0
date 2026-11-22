@@ -72,6 +72,7 @@ fun HabitItemCard(
     onForgotToRecord: () -> Unit,
     onResolveMissed: (habitId: String, dateTimestamp: Long, completed: Boolean) -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier? = null
 ) {
@@ -208,6 +209,11 @@ fun HabitItemCard(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text(if (isArabic) "تعديل العادة" else "Edit Habit") },
+                            modifier = Modifier.testTag("edit_habit_${habit.id}"),
+                            onClick = { menuExpanded = false; onEdit() }
+                        )
+                        DropdownMenuItem(
                             text = { Text(if (isArabic) "عرض السجل والإحصائيات" else "View History & Stats") },
                             leadingIcon = {
                                 Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -321,6 +327,13 @@ fun HabitItemCard(
                 }
 
                 // Notification Badge
+                habit.scheduledTime?.let { time ->
+                    BadgeChip(
+                        text = time,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
                 if (habit.notificationEnabled && !habit.notificationTime.isNullOrBlank()) {
                     BadgeChip(
                         icon = Icons.Default.Notifications,
