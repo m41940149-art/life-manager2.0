@@ -57,6 +57,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.model.Task
 import com.example.ui.components.EmptyStateView
 import com.example.util.DateTimeUtils
@@ -68,6 +72,15 @@ fun TasksScreen(
     isArabic: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCurrentDay()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        viewModel.refreshCurrentDay()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val uiState by viewModel.uiState.collectAsState()
     val taskToDelete by viewModel.taskToDelete.collectAsState()
     val taskToEdit by viewModel.taskToEdit.collectAsState()
@@ -187,6 +200,36 @@ fun TasksScreen(
                 }
             }
 
+            // Filter Chips Row (Today / All)
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(TaskFilter.values()) { filter ->
+                    val selected = uiState.selectedFilter == filter
+                    FilterChip(
+                        selected = selected,
+                        onClick = { viewModel.setFilter(filter) },
+                        label = {
+                            Text(
+                                text = if (isArabic) filter.titleAr else filter.titleEn,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.testTag("filter_chip_${filter.name.lowercase()}")
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
 
             // Task Content: Grouped List or Filtered List
@@ -194,9 +237,6 @@ fun TasksScreen(
                 // Empty state
                 val emptyTitle = when (uiState.selectedFilter) {
                     TaskFilter.TODAY -> if (isArabic) "لا توجد مهام مجدولة لليوم" else "No tasks for today"
-                    TaskFilter.TOMORROW -> if (isArabic) "لا توجد مهام مجدولة لغداً" else "No tasks for tomorrow"
-                    TaskFilter.UPCOMING -> if (isArabic) "لا توجد مهام قادمة" else "No upcoming tasks"
-                    TaskFilter.COMPLETED -> if (isArabic) "لا توجد مهام مكتملة بعد" else "No completed tasks yet"
                     TaskFilter.ALL -> if (isArabic) "قائمتك خالية من المهام" else "Your task list is empty"
                 }
 
@@ -219,7 +259,7 @@ fun TasksScreen(
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag("tasks_list"),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 88.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
