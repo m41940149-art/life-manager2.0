@@ -56,14 +56,16 @@ class TasksViewModel(
     private val _taskToEdit = MutableStateFlow<Task?>(null)
     val taskToEdit: StateFlow<Task?> = _taskToEdit.asStateFlow()
 
+    // Bumped at midnight so the list switches to the new day while the app stays open.
+    private val _dayTick = MutableStateFlow(System.currentTimeMillis())
+
     val uiState: StateFlow<TasksUiState> = combine(
         repository.getTasks(),
-        _selectedFilter
-    ) { storedTasks, filter ->
-        // Repeating tasks are only listed on their own day (completed ones stay as history).
-        val allTasks = storedTasks.filter {
-            !it.isRecurring || it.isCompleted || DateTimeUtils.isToday(it.dueDate)
-        }
+        _selectedFilter,
+        _dayTick
+    ) { storedTasks, filter, _ ->
+        // Only today's tasks are shown; tasks of other dates stay saved and appear on their day.
+        val allTasks = storedTasks.filter { DateTimeUtils.isToday(it.dueDate) }
         val todayTasks = allTasks.filter { DateTimeUtils.isToday(it.dueDate) }
         val todayCompleted = todayTasks.count { it.isCompleted }
         val overdueTasks = allTasks.filter { !it.isCompleted && DateTimeUtils.isPast(it.dueDate) }
@@ -158,6 +160,15 @@ class TasksViewModel(
     )
 
     init {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60_000L)
+                val today = DateTimeUtils.getTodayStartOfDay()
+                if (DateTimeUtils.getStartOfDay(_dayTick.value) != today) {
+                    _dayTick.value = System.currentTimeMillis()
+                }
+            }
+        }
         // A repeating task that was not done on its day moves on to its next scheduled day.
         viewModelScope.launch { repository.rollOverMissedRecurringTasks() }
     }
