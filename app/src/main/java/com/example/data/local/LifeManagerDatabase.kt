@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChecklistEntity::class,
         TimerSessionEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class LifeManagerDatabase : RoomDatabase() {
@@ -300,6 +300,13 @@ abstract class LifeManagerDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Do not guess performance times from reminder times. Existing history stays intact.
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `scheduledTime` TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): LifeManagerDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -307,7 +314,7 @@ abstract class LifeManagerDatabase : RoomDatabase() {
                     LifeManagerDatabase::class.java,
                     "life_manager.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .build()
                 INSTANCE = instance
                 instance

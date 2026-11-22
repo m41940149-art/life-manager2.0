@@ -1,5 +1,9 @@
 package com.example.ui.habits
 
+import android.app.TimePickerDialog
+import com.example.model.Habit
+import com.example.model.HabitTimeGroup
+import com.example.model.habitTimeGroup
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -63,6 +67,7 @@ import java.util.Calendar
 fun AddHabitBottomSheet(
     isArabic: Boolean,
     onDismiss: () -> Unit,
+    initialHabit: Habit? = null,
     onAddHabit: (
         name: String,
         description: String,
@@ -71,24 +76,27 @@ fun AddHabitBottomSheet(
         notificationEnabled: Boolean,
         notificationTime: String?,
         categoryIcon: String,
-        colorHex: Long
+        colorHex: Long,
+        scheduledTime: String
     ) -> Unit
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var name by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var isEveryDay by remember { mutableStateOf(true) }
+    var name by remember { mutableStateOf(initialHabit?.name ?: "") }
+    var description by remember { mutableStateOf(initialHabit?.description ?: "") }
+    var isEveryDay by remember { mutableStateOf(initialHabit?.isEveryDay ?: true) }
 
     // Calendar.SUNDAY(1) to Calendar.SATURDAY(7)
     var selectedDays by remember {
-        mutableStateOf(setOf(Calendar.SUNDAY, Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY))
+        mutableStateOf(initialHabit?.daysOfWeek ?: setOf(Calendar.SUNDAY, Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY))
     }
 
-    var notificationEnabled by remember { mutableStateOf(false) }
-    var notificationTime by remember { mutableStateOf("08:00 ص") }
-    var selectedColor by remember { mutableStateOf(0xFF006C5F) }
+    var notificationEnabled by remember { mutableStateOf(initialHabit?.notificationEnabled ?: false) }
+    var notificationTime by remember { mutableStateOf(initialHabit?.notificationTime ?: "08:00") }
+    var selectedColor by remember { mutableStateOf(initialHabit?.colorHex ?: 0xFF006C5F) }
+    var scheduledTime by remember { mutableStateOf(initialHabit?.scheduledTime) }
+    var timeError by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -149,7 +157,9 @@ fun AddHabitBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isArabic) "إضافة عادة جديدة" else "Create New Habit",
+                    text = if (initialHabit != null) {
+                        if (isArabic) "تعديل العادة" else "Edit Habit"
+                    } else if (isArabic) "إضافة عادة جديدة" else "Create New Habit",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -200,6 +210,35 @@ fun AddHabitBottomSheet(
                 shape = RoundedCornerShape(12.dp)
             )
 
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Text(
+                text = if (isArabic) "وقت أداء العادة" else "Performance time",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            androidx.compose.material3.OutlinedButton(
+                onClick = {
+                    val parts = scheduledTime?.split(":")
+                    TimePickerDialog(context, { _, hour, minute ->
+                        scheduledTime = java.lang.String.format(java.util.Locale.US, "%02d:%02d", hour, minute)
+                        timeError = false
+                    }, parts?.getOrNull(0)?.toIntOrNull() ?: 8,
+                        parts?.getOrNull(1)?.toIntOrNull() ?: 0, true).show()
+                },
+                modifier = Modifier.fillMaxWidth().testTag("habit_time_picker")
+            ) {
+                Text(scheduledTime ?: if (isArabic) "اختر الوقت" else "Choose time")
+            }
+            Text(
+                text = when (habitTimeGroup(scheduledTime)) {
+                    HabitTimeGroup.MORNING -> if (isArabic) "صباحًا: قبل ٤:٠٠ مساءً" else "Morning: before 4:00 PM"
+                    HabitTimeGroup.AFTERNOON_EVENING -> if (isArabic) "بعد الظهر / مساءً: من ٤:٠٠ مساءً" else "Afternoon / evening: from 4:00 PM"
+                    HabitTimeGroup.UNSCHEDULED -> if (isArabic) "اختر وقتًا لتصنيف العادة" else "Choose a time to group this habit"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (timeError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(modifier = Modifier.height(18.dp))
 
             // Repeat Schedule
@@ -419,6 +458,8 @@ fun AddHabitBottomSheet(
                 onClick = {
                     if (name.isBlank()) {
                         nameError = true
+                    } else if (habitTimeGroup(scheduledTime) == HabitTimeGroup.UNSCHEDULED) {
+                        timeError = true
                     } else {
                         val effectiveDays = if (isEveryDay) {
                             setOf(1, 2, 3, 4, 5, 6, 7)
@@ -432,8 +473,9 @@ fun AddHabitBottomSheet(
                             effectiveDays,
                             notificationEnabled,
                             notificationTime.takeIf { notificationEnabled },
-                            "check_circle",
-                            selectedColor
+                            initialHabit?.categoryIcon ?: "check_circle",
+                            selectedColor,
+                            scheduledTime!!
                         )
                         onDismiss()
                     }
@@ -450,7 +492,9 @@ fun AddHabitBottomSheet(
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isArabic) "إنشاء العادة" else "Create Habit",
+                    text = if (initialHabit != null) {
+                        if (isArabic) "حفظ التغييرات" else "Save Changes"
+                    } else if (isArabic) "إنشاء العادة" else "Create Habit",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

@@ -17,6 +17,8 @@ data class Habit(
         Calendar.FRIDAY,
         Calendar.SATURDAY
     ),
+    // Local performance time in HH:mm, independent of optional reminders.
+    val scheduledTime: String? = null,
     val notificationEnabled: Boolean = false,
     val notificationTime: String? = null,
     val createdAt: Long = System.currentTimeMillis(),

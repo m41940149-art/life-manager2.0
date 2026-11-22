@@ -60,6 +60,7 @@ class RoomHabitRepository(
                     description = entity.description,
                     isEveryDay = entity.isEveryDay,
                     daysOfWeek = daysOfWeek,
+                    scheduledTime = entity.scheduledTime,
                     notificationEnabled = entity.notificationEnabled,
                     notificationTime = entity.notificationTime,
                     createdAt = entity.createdAt,
