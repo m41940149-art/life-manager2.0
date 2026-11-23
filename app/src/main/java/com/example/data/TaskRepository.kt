@@ -3,6 +3,7 @@ package com.example.data
 import com.example.model.Task
 import com.example.model.TaskPriority
 import com.example.util.DateTimeUtils
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +15,12 @@ interface TaskRepository {
     suspend fun updateTask(task: Task)
     suspend fun deleteTask(taskId: String)
     suspend fun toggleTaskCompletion(taskId: String)
+
+    /** Implementations must compare the old schedule before changing it. */
+    suspend fun updateStudyPlanSchedule(original: Task, revised: Task) {
+        val latest = getTasks().first().find { it.id == original.id } ?: return
+        if (latest == original) updateTask(revised)
+    }
 
     /** Moves unfinished repeating tasks whose day has passed to their next scheduled day. */
     suspend fun rollOverMissedRecurringTasks() {}
