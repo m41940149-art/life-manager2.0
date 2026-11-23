@@ -22,6 +22,16 @@ interface TaskDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTasks(tasks: List<TaskEntity>)
 
+    // Atomic compare-and-update: concurrent completion/reminder edits are preserved,
+    // concurrent schedule edits or deletions prevent the migration from touching the row.
+    @Query("""UPDATE tasks SET title = :title, description = :description, dueDate = :dueDate,
+        updatedAt = :updatedAt, syncStatus = 'PENDING_SYNC'
+        WHERE id = :id AND title = :oldTitle AND description = :oldDescription
+        AND dueDate = :oldDueDate AND recurrenceType = 'NONE' AND seriesId IS NULL
+        AND syncStatus != 'PENDING_DELETE'""")
+    suspend fun updateStudyPlanSchedule(id: String, oldTitle: String, oldDescription: String,
+        oldDueDate: Long, title: String, description: String, dueDate: Long, updatedAt: Long): Int
+
     @Update
     suspend fun updateTask(task: TaskEntity)
 
