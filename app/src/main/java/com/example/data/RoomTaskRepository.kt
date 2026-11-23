@@ -43,6 +43,11 @@ class RoomTaskRepository(
         taskDao.updateTask(entity)
     }
 
+    override suspend fun updateStudyPlanSchedule(original: Task, revised: Task) {
+        taskDao.updateStudyPlanSchedule(original.id, original.title, original.description, original.dueDate,
+            revised.title, revised.description, revised.dueDate, System.currentTimeMillis())
+    }
+
     override suspend fun deleteTask(taskId: String) {
         taskDao.deleteTaskById(taskId)
         syncTombstoneDao?.insertTombstone(
