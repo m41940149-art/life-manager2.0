@@ -4,6 +4,9 @@ import android.content.Context
 import com.example.model.Task
 import com.example.model.TaskPriority
 import java.util.Calendar
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * One-time seed of the user's 28-day study plan (23 Nov - 20 Dec 2026)
@@ -41,7 +44,7 @@ object StudyPlanSeeder {
     private fun singleTask(day: Int, month: Int, dayOfMonth: Int, title: String, description: String) =
         SeedEntry("y$day", month, dayOfMonth, "ي$day: $title", description)
 
-    private val SEED_ENTRIES = listOf(
+    private val ORIGINAL_ENTRIES = listOf(
         singleTask(1, 11, 23, "قانون ف1–4", "جديد 69ص\nمراجعة: لا شيء"),
 
         newTask(2, 11, 24, "قانون ف5–7", 54),
@@ -113,34 +116,89 @@ object StudyPlanSeeder {
         singleTask(28, 12, 20, "اختبار ذاتي شامل", "اكتب عناوين كل مادة من ذاكرتك ثم صحّح")
     )
 
-    /**
-     * Builds the 48 study-plan tasks with fixed IDs, each dated at local
-     * start-of-day on its scheduled date. Pure and unit-testable.
-     */
-    fun buildStudyPlanTasks(): List<Task> = SEED_ENTRIES.map { entry ->
-        val cal = Calendar.getInstance()
-        cal.clear()
-        cal.set(2026, entry.month - 1, entry.dayOfMonth, 0, 0, 0)
-        Task(
-            id = "study-plan-2026-${entry.idSuffix}",
-            title = entry.title,
-            description = entry.description,
-            dueDate = cal.timeInMillis,
-            dueTime = null,
-            priority = TaskPriority.MEDIUM,
-            category = "مذاكرة"
-        )
+    private val seedMutex = Mutex()
+
+    // Original IDs follow the same study material, not its new day number.
+    private val studyOrder = (6..11).toList() + (1..5).toList() + (12..21).toList()
+    private val originalStudy = ORIGINAL_ENTRIES.filter { it.description.startsWith("جديد") }
+    private val reorderedEntries: List<SeedEntry> by lazy {
+        val studies = studyOrder.mapIndexed { index, oldDay ->
+            val old = originalStudy[oldDay - 1]
+            val day = index + 1
+            val date = planDate(day)
+            old.copy(month = date.get(Calendar.MONTH) + 1, dayOfMonth = date.get(Calendar.DAY_OF_MONTH),
+                title = "ي$day:" + old.title.substringAfter(":"),
+                description = old.description.substringBefore("\n"))
+        }
+        val pages = studies.map { Regex("جديد (\\d+)ص").find(it.description)!!.groupValues[1].toInt() }
+        val daily = studies.flatMapIndexed { index, study ->
+            val day = index + 1
+            if (day == 1) listOf(study.copy(description = study.description + "\nمراجعة: لا شيء"))
+            else {
+                val refs = listOf(1, 3, 7).map { day - it }.filter { it >= 1 }
+                val detail = refs.joinToString(" + ") { "ي$it (${pages[it - 1]}ص)" }
+                val total = if (refs.size > 1) " = ${refs.sumOf { pages[it - 1] }}ص" else ""
+                listOf(study, reviewTask(day, study.month, study.dayOfMonth, detail + total))
+            }
+        }
+        val finalDays = ORIGINAL_ENTRIES.filter { it.idSuffix.matches(Regex("y(2[2-8])")) }.map { entry ->
+            val oldDay = entry.idSuffix.removePrefix("y").toInt()
+            val day = when (oldDay) { 22 -> 23; 23 -> 22; else -> oldDay }
+            val date = planDate(day)
+            entry.copy(month = date.get(Calendar.MONTH) + 1, dayOfMonth = date.get(Calendar.DAY_OF_MONTH),
+                title = "ي$day:" + entry.title.substringAfter(":"))
+        }.sortedBy { it.dayOfMonth }
+        daily + finalDays
     }
 
-    /**
-     * Inserts the study plan once per install. Runs before any user interaction
-     * with the seeded rows; afterwards the flag keeps user edits and deletions
-     * final. The tasks sync to Firestore like any locally created task.
+    private fun planDate(day: Int) = Calendar.getInstance().apply {
+        clear()
+        set(2026, Calendar.NOVEMBER, 23, 0, 0, 0)
+        add(Calendar.DAY_OF_MONTH, day - 1)
+    }
+
+    private fun buildTasks(entries: List<SeedEntry>): List<Task> = entries.map { entry ->
+        val cal = Calendar.getInstance().apply {
+            clear()
+            set(2026, entry.month - 1, entry.dayOfMonth, 0, 0, 0)
+        }
+        Task(id = "study-plan-2026-${entry.idSuffix}", title = entry.title,
+            description = entry.description, dueDate = cal.timeInMillis,
+            priority = TaskPriority.MEDIUM, category = "مذاكرة")
+    }
+
+    fun buildStudyPlanTasks(): List<Task> = buildTasks(reorderedEntries)
+
+    internal fun buildOriginalStudyPlanTasks(): List<Task> = buildTasks(ORIGINAL_ENTRIES)
+
+    /** Only schedule-owned fields change. Missing/deleted rows are never recreated on upgrade.
+     * A changed title, description, date or recurrence is a user edit and is left alone.
+     * Completion, creation time, priority, category and reminder time stay with the same ID.
+     */
+    internal fun reorderedTask(current: Task): Task? {
+        val old = buildOriginalStudyPlanTasks().find { it.id == current.id } ?: return null
+        val revised = buildStudyPlanTasks().single { it.id == current.id }
+        if (current.title != old.title || current.description != old.description ||
+            current.dueDate != old.dueDate || current.isRecurring || current.seriesId != null) return null
+        if (old.title == revised.title && old.description == revised.description && old.dueDate == revised.dueDate) return null
+        return current.copy(title = revised.title, description = revised.description, dueDate = revised.dueDate)
+    }
+
+    /** Watches while the activity is alive so old rows arriving from cloud sync are migrated too.
+     * The comparison is idempotent, including after a crash or a repeated launch.
      */
     suspend fun seedIfNeeded(context: Context, repository: TaskRepository) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_SEEDED, false)) return
-        buildStudyPlanTasks().forEach { repository.addTask(it) }
-        prefs.edit().putBoolean(KEY_SEEDED, true).apply()
+        seedMutex.withLock {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_SEEDED, false)) {
+                buildStudyPlanTasks().forEach { repository.addTask(it) }
+                prefs.edit().putBoolean(KEY_SEEDED, true).apply()
+            }
+        }
+        repository.getTasks().collect { tasks ->
+            tasks.forEach { current ->
+                reorderedTask(current)?.let { repository.updateStudyPlanSchedule(current, it) }
+            }
+        }
     }
 }
