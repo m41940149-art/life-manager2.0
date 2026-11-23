@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.data.AppContainer.initialize(applicationContext)
-        // One-time seed of the 28-day study plan into the Tasks tab (no-op after first run).
+        // Seed once, then safely reorder unchanged legacy schedule rows, including later sync pulls.
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 com.example.data.StudyPlanSeeder.seedIfNeeded(
