@@ -87,8 +87,8 @@ class StudyPlanSeedTest {
     @Test
     fun seed_moneyAndBankingPagesMatchChapterCounts() {
         val tasks = StudyPlanSeeder.buildStudyPlanTasks()
-        val moneyPages = (6..11).map { day ->
-            val task = tasks.single { it.id == "study-plan-2026-y$day-new" }
+        val moneyPages = (1..6).map { day ->
+            val task = tasks.single { it.title.startsWith("ي$day:") && it.description.startsWith("جديد") }
             Regex("جديد (\\d+)ص").find(task.description)!!.groupValues[1].toInt()
         }
         // Chapter sizes supplied by the user: P1 17+15+28, 14+24+30, 30+23 / P2 13+25+20, 22+14+37, 19+17
@@ -100,8 +100,7 @@ class StudyPlanSeedTest {
     fun seed_reviewArithmeticMatchesNewTaskPages() {
         val tasks = StudyPlanSeeder.buildStudyPlanTasks()
         val newPagesByDay = (1..21).associateWith { day ->
-            val task = tasks.singleOrNull { it.id == "study-plan-2026-y$day-new" }
-                ?: tasks.single { it.id == "study-plan-2026-y$day" }
+            val task = tasks.single { it.title.startsWith("ي$day:") && it.description.startsWith("جديد") }
             Regex("جديد (\\d+)ص").find(task.description)!!.groupValues[1].toInt()
         }
         for (day in 2..21) {
@@ -110,12 +109,48 @@ class StudyPlanSeedTest {
             assertTrue("day $day references something", referenced.isNotEmpty())
             referenced.forEach { m ->
                 val refDay = m.groupValues[1].toInt()
+                assertTrue(day - refDay in listOf(1, 3, 7))
                 val refPages = m.groupValues[2].toInt()
                 assertEquals("day $day review of ي$refDay", newPagesByDay[refDay], refPages)
             }
             Regex("= (\\d+)ص").find(review)?.let { total ->
                 assertEquals("day $day review total", referenced.sumOf { it.groupValues[2].toInt() }, total.groupValues[1].toInt())
             }
+        }
+    }
+
+    @Test fun reorder_preservesOriginalIdsAndMaterial() {
+        val old = StudyPlanSeeder.buildOriginalStudyPlanTasks()
+        val revised = StudyPlanSeeder.buildStudyPlanTasks()
+        assertEquals(old.map { it.id }.toSet(), revised.map { it.id }.toSet())
+        val expected = listOf(6,7,8,9,10,11,1,2,3,4,5) + (12..21).toList()
+        expected.forEachIndexed { index, originalDay ->
+            val before = old.single { it.title.startsWith("ي$originalDay:") && it.description.startsWith("جديد") }
+            val after = revised.single { it.id == before.id }
+            assertTrue(after.title.startsWith("ي${index + 1}:"))
+            assertEquals(before.title.substringAfter(":"), after.title.substringAfter(":"))
+        }
+        assertTrue(revised.single { it.title.startsWith("ي22:") }.title.contains("النقود والبنوك"))
+        assertTrue(revised.single { it.title.startsWith("ي23:") }.title.contains("القانون"))
+    }
+
+    @Test fun migration_preservesCompletionAndUserMetadata_andIsIdempotent() {
+        val old = StudyPlanSeeder.buildOriginalStudyPlanTasks().first().copy(
+            isCompleted = true, completedAt = 123L, createdAt = 42L,
+            priority = com.example.model.TaskPriority.HIGH, category = "custom", dueTime = "10:00")
+        val revised = StudyPlanSeeder.reorderedTask(old)!!
+        assertEquals(old.id, revised.id)
+        assertTrue(revised.title.startsWith("ي7:"))
+        assertEquals(old.copy(title = revised.title, description = revised.description, dueDate = revised.dueDate), revised)
+        assertEquals(null, StudyPlanSeeder.reorderedTask(revised))
+    }
+
+    @Test fun migration_skipsUserEditedSchedulesAndUnrelatedTasks() {
+        val old = StudyPlanSeeder.buildOriginalStudyPlanTasks().first()
+        listOf(old.copy(title = "edited"), old.copy(description = "my notes"),
+            old.copy(dueDate = old.dueDate + 1000), old.copy(id = "other"),
+            old.copy(recurrenceType = com.example.model.RecurrenceType.DAILY)).forEach {
+            assertEquals(null, StudyPlanSeeder.reorderedTask(it))
         }
     }
 }
