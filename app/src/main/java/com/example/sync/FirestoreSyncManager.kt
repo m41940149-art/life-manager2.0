@@ -571,6 +571,8 @@ class FirestoreSyncManager(
                 "folderId" to c.folderId,
                 "isFavorite" to c.isFavorite,
                 "itemsJson" to c.itemsJson,
+                "ratingMode" to c.ratingMode,
+                "ratingLabelsJson" to c.ratingLabelsJson,
                 "createdAt" to c.createdAt,
                 "updatedAt" to c.updatedAt
             )
@@ -590,6 +592,8 @@ class FirestoreSyncManager(
                         folderId = doc.getString("folderId"),
                         isFavorite = doc.getBoolean("isFavorite") ?: false,
                         itemsJson = doc.getString("itemsJson") ?: "[]",
+                        ratingMode = doc.getString("ratingMode") ?: "SCORE",
+                        ratingLabelsJson = doc.getString("ratingLabelsJson") ?: "[]",
                         createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
                         updatedAt = remoteUpdatedAt
                     )
@@ -601,6 +605,8 @@ class FirestoreSyncManager(
                         folderId = doc.getString("folderId"),
                         isFavorite = doc.getBoolean("isFavorite") ?: existing.isFavorite,
                         itemsJson = doc.getString("itemsJson") ?: existing.itemsJson,
+                        ratingMode = doc.getString("ratingMode") ?: existing.ratingMode,
+                        ratingLabelsJson = doc.getString("ratingLabelsJson") ?: existing.ratingLabelsJson,
                         updatedAt = remoteUpdatedAt
                     )
                 )
