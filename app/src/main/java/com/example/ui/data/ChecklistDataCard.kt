@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.Checklist
+import com.example.model.ChecklistRatingMode
 
 private const val MAX_PREVIEW_ITEMS = 6
 private val StarColor = Color(0xFFEAB308)
@@ -162,18 +163,36 @@ fun ChecklistDataCard(
                         modifier = Modifier.weight(1f)
                     )
                     if (item.isDone && item.rating > 0) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Filled.Star,
-                            contentDescription = null,
-                            tint = StarColor,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = "${item.rating}/10",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        when (checklist.ratingMode) {
+                            ChecklistRatingMode.SCORE -> {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Filled.Star,
+                                    contentDescription = null,
+                                    tint = StarColor,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "${item.rating}/10",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            ChecklistRatingMode.CUSTOM -> {
+                                checklist.ratingLabels.getOrNull(item.rating - 1)?.let { label ->
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            ChecklistRatingMode.NONE -> { }
+                        }
                     }
                 }
             }
