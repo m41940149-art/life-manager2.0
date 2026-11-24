@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChecklistEntity::class,
         TimerSessionEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class LifeManagerDatabase : RoomDatabase() {
@@ -307,6 +307,14 @@ abstract class LifeManagerDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // New lists ask for their type first; existing lists keep rating out of 10.
+                db.execSQL("ALTER TABLE `checklists` ADD COLUMN `ratingMode` TEXT NOT NULL DEFAULT 'SCORE'")
+                db.execSQL("ALTER TABLE `checklists` ADD COLUMN `ratingLabelsJson` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun getDatabase(context: Context): LifeManagerDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -314,7 +322,7 @@ abstract class LifeManagerDatabase : RoomDatabase() {
                     LifeManagerDatabase::class.java,
                     "life_manager.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .build()
                 INSTANCE = instance
                 instance
