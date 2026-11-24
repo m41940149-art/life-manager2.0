@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
@@ -96,7 +97,9 @@ private data class ChecklistSnapshot(
     val title: String,
     val items: List<ChecklistItem>,
     val folderId: String?,
-    val isFavorite: Boolean
+    val isFavorite: Boolean,
+    val ratingMode: ChecklistRatingMode,
+    val ratingLabels: List<String>
 )
 
 /**
@@ -130,8 +133,9 @@ fun ChecklistEditorDialog(
             ratingLabels = newListRatingLabels
         )
     }
-    val ratingMode = base.ratingMode
-    val ratingLabels = base.ratingLabels
+    var ratingMode by remember { mutableStateOf(base.ratingMode) }
+    var ratingLabels by remember { mutableStateOf(base.ratingLabels) }
+    var showTypeDialog by remember { mutableStateOf(false) }
 
     var title by remember { mutableStateOf(base.title) }
     val items = remember { mutableStateListOf<ChecklistItem>().apply { addAll(base.items) } }
@@ -158,7 +162,9 @@ fun ChecklistEditorDialog(
         title = title.trim(),
         items = normalizedItems(),
         folderId = folderId,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        ratingMode = ratingMode,
+        ratingLabels = ratingLabels
     )
 
     var lastSaved by remember {
@@ -168,7 +174,9 @@ fun ChecklistEditorDialog(
                 base.items.filter { it.text.isNotBlank() }
                     .map { it.copy(text = it.text.trim(), note = it.note.trim()) },
                 base.folderId,
-                base.isFavorite
+                base.isFavorite,
+                base.ratingMode,
+                base.ratingLabels
             ) else null
         )
     }
@@ -229,6 +237,8 @@ fun ChecklistEditorDialog(
         items = snap.items,
         folderId = snap.folderId,
         isFavorite = snap.isFavorite,
+        ratingMode = snap.ratingMode,
+        ratingLabels = snap.ratingLabels,
         updatedAt = now
     )
 
@@ -277,6 +287,35 @@ fun ChecklistEditorDialog(
     BackHandler { close() }
 
     val scrollState = rememberScrollState()
+
+    if (showTypeDialog) {
+        ChecklistTypeDialog(
+            isArabic = isArabic,
+            initialMode = ratingMode,
+            initialLabels = ratingLabels,
+            isEditing = true,
+            onDismiss = { showTypeDialog = false },
+            onCreate = { newMode, newLabels ->
+                showTypeDialog = false
+                val oldMode = ratingMode
+                val oldLabels = ratingLabels
+                // Ratings are kept when they still mean the same thing; otherwise they are cleared.
+                val keep = when (newMode) {
+                    ChecklistRatingMode.NONE -> true // hidden, not deleted
+                    ChecklistRatingMode.SCORE -> oldMode != ChecklistRatingMode.CUSTOM
+                    ChecklistRatingMode.CUSTOM ->
+                        oldMode == ChecklistRatingMode.CUSTOM
+                }
+                for (i in items.indices) {
+                    val r = items[i].rating
+                    val ok = keep && (newMode != ChecklistRatingMode.CUSTOM || r <= newLabels.size)
+                    if (!ok && r != 0) items[i] = items[i].copy(rating = 0)
+                }
+                ratingMode = newMode
+                ratingLabels = newLabels
+            }
+        )
+    }
 
     val titleFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
@@ -357,6 +396,17 @@ fun ChecklistEditorDialog(
                                 modifier = Modifier.testTag("checklist_copy_btn")
                             )
                             DropdownMenuItem(
+                                text = { Text(if (isArabic) "تغيير نوع القائمة" else "Change list type") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showTypeDialog = true
+                                },
+                                modifier = Modifier.testTag("checklist_change_type_btn")
+                            )
+                            DropdownMenuItem(
                                 text = { Text(if (isArabic) "نقل إلى مجلد" else "Move to folder") },
                                 leadingIcon = {
                                     Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -419,6 +469,20 @@ fun ChecklistEditorDialog(
                             .fillMaxWidth()
                             .focusRequester(titleFocus)
                             .testTag("checklist_title_input")
+                    )
+
+                    Text(
+                        text = (if (isArabic) "النوع: " else "Type: ") + when (ratingMode) {
+                            ChecklistRatingMode.NONE -> if (isArabic) "إنجاز مرة واحدة" else "One-time"
+                            ChecklistRatingMode.SCORE -> if (isArabic) "تقييم من 10" else "Rated out of 10"
+                            ChecklistRatingMode.CUSTOM -> ratingLabels.joinToString(" / ")
+                        } + (if (isArabic) "  •  تغيير" else "  •  change"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { showTypeDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .testTag("checklist_type_chip")
                     )
 
                     val total = items.count { it.text.isNotBlank() }
