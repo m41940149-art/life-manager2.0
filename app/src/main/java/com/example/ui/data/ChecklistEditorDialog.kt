@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -81,6 +83,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.example.model.Checklist
 import com.example.model.ChecklistItem
+import com.example.model.ChecklistRatingMode
 import com.example.model.Folder
 import com.example.model.TextCard
 import kotlinx.coroutines.delay
@@ -100,8 +103,9 @@ private data class ChecklistSnapshot(
  * Full-screen checklist editor with autosave (same behaviour as [CardEditorDialog]).
  *
  * - Tap the box next to an item to mark it done. A done item opens a details area under it
- *   where you can write a note and give it a 1..10 rating
- *   (watched a movie -> "great ending", 4 stars).
+ *   where you can write a note and, depending on the list's type, give it a rating:
+ *   1..10 for a score list, one of the list's named boxes for a custom list,
+ *   and nothing for a one-time list.
  * - Type in the last row and press "done" on the keyboard to add items one after another.
  * - A new list is created on the first non-empty input and never saved empty.
  */
@@ -109,6 +113,8 @@ private data class ChecklistSnapshot(
 fun ChecklistEditorDialog(
     checklist: Checklist?,
     initialFolderId: String?,
+    newListRatingMode: ChecklistRatingMode = ChecklistRatingMode.SCORE,
+    newListRatingLabels: List<String> = emptyList(),
     folders: List<Folder>,
     isArabic: Boolean,
     onSave: (checklist: Checklist, isNew: Boolean) -> Unit,
@@ -116,7 +122,16 @@ fun ChecklistEditorDialog(
     onDeleteWithUndo: (checklist: Checklist) -> Unit,
     onClose: () -> Unit
 ) {
-    val base = remember { checklist ?: Checklist(title = "", folderId = initialFolderId) }
+    val base = remember {
+        checklist ?: Checklist(
+            title = "",
+            folderId = initialFolderId,
+            ratingMode = newListRatingMode,
+            ratingLabels = newListRatingLabels
+        )
+    }
+    val ratingMode = base.ratingMode
+    val ratingLabels = base.ratingLabels
 
     var title by remember { mutableStateOf(base.title) }
     val items = remember { mutableStateListOf<ChecklistItem>().apply { addAll(base.items) } }
@@ -191,7 +206,14 @@ fun ChecklistEditorDialog(
             (snap.items.filter { !it.isDone } + snap.items.filter { it.isDone }).forEach { item ->
                 append(if (item.isDone) "[x] " else "[ ] ")
                 append(item.text)
-                if (item.isDone && item.rating > 0) append(" - ${item.rating}/10")
+                if (item.isDone && item.rating > 0) {
+                    when (ratingMode) {
+                        ChecklistRatingMode.SCORE -> append(" - ${item.rating}/10")
+                        ChecklistRatingMode.CUSTOM ->
+                            ratingLabels.getOrNull(item.rating - 1)?.let { append(" - $it") }
+                        ChecklistRatingMode.NONE -> { }
+                    }
+                }
                 appendLine()
                 if (item.isDone && item.note.isNotBlank()) {
                     item.note.lines().forEach { appendLine("    $it") }
@@ -418,6 +440,8 @@ fun ChecklistEditorDialog(
                                 item = item,
                                 expanded = item.id in expandedIds,
                                 isArabic = isArabic,
+                                ratingMode = ratingMode,
+                                ratingLabels = ratingLabels,
                                 onToggleDone = { toggleDone(item.id) },
                                 onTextChange = { t -> updateItem(item.id) { it.copy(text = t) } },
                                 onNoteChange = { n -> updateItem(item.id) { it.copy(note = n) } },
@@ -551,11 +575,14 @@ fun ChecklistEditorDialog(
 }
 
 /** One checklist line, plus the notes / rating area that opens under it once it is done. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChecklistItemRow(
     item: ChecklistItem,
     expanded: Boolean,
     isArabic: Boolean,
+    ratingMode: ChecklistRatingMode,
+    ratingLabels: List<String>,
     onToggleDone: () -> Unit,
     onTextChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
@@ -629,42 +656,88 @@ private fun ChecklistItemRow(
                         .fillMaxWidth()
                         .padding(start = 48.dp, end = 8.dp, bottom = 8.dp)
                 ) {
-                    Text(
-                        text = if (item.rating > 0) {
-                            if (isArabic) "التقييم: ${item.rating} من 10" else "Rating: ${item.rating} / 10"
-                        } else {
-                            if (isArabic) "التقييم (من 10)" else "Rating (out of 10)"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    for (rowStart in intArrayOf(1, 6)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        ) {
-                            for (n in rowStart..rowStart + 4) {
-                                val selected = item.rating == n
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (selected) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                        .clickable { onRatingChange(if (selected) 0 else n) }
-                                        .testTag("checklist_item_rating_${item.id}_$n"),
-                                    contentAlignment = Alignment.Center
+                    if (ratingMode != ChecklistRatingMode.NONE) {
+                        Text(
+                            text = when {
+                                item.rating <= 0 -> when (ratingMode) {
+                                    ChecklistRatingMode.SCORE -> if (isArabic) "التقييم (من 10)" else "Rating (out of 10)"
+                                    else -> if (isArabic) "التقييم" else "Rating"
+                                }
+                                ratingMode == ChecklistRatingMode.SCORE ->
+                                    if (isArabic) "التقييم: ${item.rating} من 10" else "Rating: ${item.rating} / 10"
+                                else -> {
+                                    val label = ratingLabels.getOrNull(item.rating - 1)
+                                    if (label != null) {
+                                        if (isArabic) "التقييم: $label" else "Rating: $label"
+                                    } else {
+                                        if (isArabic) "التقييم" else "Rating"
+                                    }
+                                }
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (ratingMode == ChecklistRatingMode.SCORE) {
+                            for (rowStart in intArrayOf(1, 6)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(bottom = 6.dp)
                                 ) {
-                                    Text(
-                                        text = "$n",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selected) MaterialTheme.colorScheme.onPrimary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    for (n in rowStart..rowStart + 4) {
+                                        val selected = item.rating == n
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (selected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                                .clickable { onRatingChange(if (selected) 0 else n) }
+                                                .testTag("checklist_item_rating_${item.id}_$n"),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$n",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // CUSTOM: the list's own named boxes
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            ) {
+                                ratingLabels.forEachIndexed { index, label ->
+                                    val value = index + 1
+                                    val selected = item.rating == value
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(
+                                                if (selected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                            .clickable { onRatingChange(if (selected) 0 else value) }
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                            .testTag("checklist_item_rating_${item.id}_$value"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -698,19 +771,28 @@ private fun ChecklistItemRow(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (item.rating > 0) {
-                        Icon(
-                            Icons.Filled.Star,
-                            contentDescription = null,
-                            tint = StarColor,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "${item.rating}/10",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        if (ratingMode == ChecklistRatingMode.SCORE) {
+                            Icon(
+                                Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = StarColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "${item.rating}/10",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        } else if (ratingMode == ChecklistRatingMode.CUSTOM) {
+                            Text(
+                                text = ratingLabels.getOrNull(item.rating - 1) ?: "${item.rating}/10",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                     }
                     if (item.note.isNotBlank()) {
                         Text(
