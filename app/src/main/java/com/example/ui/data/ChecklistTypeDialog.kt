@@ -47,11 +47,18 @@ private const val MAX_CUSTOM_BOXES = 10
 fun ChecklistTypeDialog(
     isArabic: Boolean,
     onDismiss: () -> Unit,
-    onCreate: (mode: ChecklistRatingMode, labels: List<String>) -> Unit
+    onCreate: (mode: ChecklistRatingMode, labels: List<String>) -> Unit,
+    initialMode: ChecklistRatingMode? = null,
+    initialLabels: List<String> = emptyList(),
+    isEditing: Boolean = false
 ) {
-    var mode by remember { mutableStateOf<ChecklistRatingMode?>(null) }
-    var boxCount by remember { mutableIntStateOf(3) }
-    val labels = remember { mutableStateListOf("", "", "") }
+    var mode by remember { mutableStateOf(initialMode) }
+    var boxCount by remember { mutableIntStateOf(if (initialLabels.isNotEmpty()) initialLabels.size.coerceIn(1, MAX_CUSTOM_BOXES) else 3) }
+    val labels = remember {
+        mutableStateListOf<String>().apply {
+            if (initialLabels.isNotEmpty()) addAll(initialLabels.take(MAX_CUSTOM_BOXES)) else addAll(listOf("", "", ""))
+        }
+    }
 
     fun setBoxCount(n: Int) {
         boxCount = n
@@ -92,12 +99,22 @@ fun ChecklistTypeDialog(
         shape = RoundedCornerShape(20.dp),
         title = {
             Text(
-                text = if (isArabic) "ما نوع القائمة؟" else "What kind of list?",
+                text = if (isEditing) (if (isArabic) "تغيير نوع القائمة" else "Change list type")
+                else if (isArabic) "ما نوع القائمة؟" else "What kind of list?",
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (isEditing) {
+                    Text(
+                        text = if (isArabic) "لو غيّرت إلى نوع مختلف قد تُمسح التقييمات الحالية للعناصر. الأسماء والملاحظات والعناصر تبقى."
+                        else "Switching to a different type may clear the current item ratings. Items and notes are kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
                 option(
                     ChecklistRatingMode.NONE,
                     "checklist_type_option_none",
@@ -170,7 +187,10 @@ fun ChecklistTypeDialog(
                 enabled = canCreate,
                 modifier = Modifier.testTag("checklist_type_create_btn")
             ) {
-                Text(if (isArabic) "إنشاء" else "Create")
+                Text(
+                    if (isEditing) (if (isArabic) "حفظ" else "Save")
+                    else if (isArabic) "إنشاء" else "Create"
+                )
             }
         },
         dismissButton = {
