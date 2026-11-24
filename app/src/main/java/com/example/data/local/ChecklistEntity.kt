@@ -5,6 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.model.Checklist
 import com.example.model.ChecklistItem
+import com.example.model.ChecklistRatingMode
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,9 +24,34 @@ data class ChecklistEntity(
     val isFavorite: Boolean = false,
     /** JSON array of [ChecklistItem]. */
     val itemsJson: String = "[]",
+    /** [ChecklistRatingMode] name; SCORE keeps the pre-existing rating-out-of-10 behaviour. */
+    val ratingMode: String = "SCORE",
+    /** JSON array of the custom box names, used when [ratingMode] is CUSTOM. */
+    val ratingLabelsJson: String = "[]",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
+
+internal fun parseRatingMode(raw: String?): ChecklistRatingMode =
+    runCatching { ChecklistRatingMode.valueOf(raw ?: "") }.getOrDefault(ChecklistRatingMode.SCORE)
+
+internal fun List<String>.toLabelsJson(): String {
+    val array = JSONArray()
+    forEach { array.put(it) }
+    return array.toString()
+}
+
+internal fun parseLabelsJson(json: String): List<String> {
+    if (json.isBlank()) return emptyList()
+    return try {
+        val array = JSONArray(json)
+        (0 until array.length()).map { array.optString(it) }
+            .filter { it.isNotBlank() }
+            .take(10)
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
 
 internal fun List<ChecklistItem>.toItemsJson(): String {
     val array = JSONArray()
@@ -69,6 +95,8 @@ fun ChecklistEntity.toDomain(): Checklist = Checklist(
     folderId = folderId,
     title = title,
     items = parseItemsJson(itemsJson),
+    ratingMode = parseRatingMode(ratingMode),
+    ratingLabels = parseLabelsJson(ratingLabelsJson),
     isFavorite = isFavorite,
     createdAt = createdAt,
     updatedAt = updatedAt
@@ -80,6 +108,8 @@ fun Checklist.toEntity(updatedAt: Long = this.updatedAt): ChecklistEntity = Chec
     folderId = folderId,
     isFavorite = isFavorite,
     itemsJson = items.toItemsJson(),
+    ratingMode = ratingMode.name,
+    ratingLabelsJson = ratingLabels.toLabelsJson(),
     createdAt = createdAt,
     updatedAt = updatedAt
 )
