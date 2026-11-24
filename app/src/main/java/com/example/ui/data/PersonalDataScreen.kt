@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Checklist
+import com.example.model.ChecklistRatingMode
 import com.example.model.Folder
 import com.example.model.TextCard
 import com.example.ui.components.EmptyStateView
@@ -78,6 +79,7 @@ fun PersonalDataScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var showChecklistTypeDialog by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
     var editorRequest by remember { mutableStateOf<EditorRequest?>(null) }
     var checklistEditorRequest by remember { mutableStateOf<ChecklistEditorRequest?>(null) }
@@ -176,7 +178,7 @@ fun PersonalDataScreen(
                 },
                 onAddChecklist = {
                     fabExpanded = false
-                    checklistEditorRequest = ChecklistEditorRequest(checklist = null)
+                    showChecklistTypeDialog = true
                 },
                 onAddFolder = {
                     fabExpanded = false
@@ -436,6 +438,22 @@ fun PersonalDataScreen(
             )
         }
 
+        // Dialog: pick the new list's type (one-time, out of 10, or custom boxes)
+        if (showChecklistTypeDialog) {
+            ChecklistTypeDialog(
+                isArabic = isArabic,
+                onDismiss = { showChecklistTypeDialog = false },
+                onCreate = { mode, labels ->
+                    showChecklistTypeDialog = false
+                    checklistEditorRequest = ChecklistEditorRequest(
+                        checklist = null,
+                        ratingMode = mode,
+                        ratingLabels = labels
+                    )
+                }
+            )
+        }
+
         // Full-screen editor (create + view + edit, autosaves)
         editorRequest?.let { request ->
             key(request.key) {
@@ -458,6 +476,8 @@ fun PersonalDataScreen(
                 ChecklistEditorDialog(
                     checklist = request.checklist,
                     initialFolderId = uiState.currentFolder?.id,
+                    newListRatingMode = request.ratingMode,
+                    newListRatingLabels = request.ratingLabels,
                     folders = uiState.folders,
                     isArabic = isArabic,
                     onSave = { list, isNew -> viewModel.saveChecklist(list, isNew) },
@@ -479,6 +499,8 @@ private data class EditorRequest(
 /** Same idea as [EditorRequest], for the checklist editor. */
 private data class ChecklistEditorRequest(
     val checklist: Checklist?,
+    val ratingMode: ChecklistRatingMode = ChecklistRatingMode.SCORE,
+    val ratingLabels: List<String> = emptyList(),
     val key: Long = System.nanoTime()
 )
 
