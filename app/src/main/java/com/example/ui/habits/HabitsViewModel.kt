@@ -6,6 +6,8 @@ import com.example.data.AppContainer
 import com.example.data.HabitRepository
 import com.example.model.Habit
 import com.example.model.HabitCompletion
+import com.example.ui.celebration.CelebrationCenter
+import com.example.ui.celebration.CelebrationKind
 import com.example.util.DateTimeUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,9 +81,31 @@ class HabitsViewModel(
     )
 
     fun toggleCheckIn(habitId: String) {
+        val state = uiState.value
+        val habit = state.habits.find { it.id == habitId }
+        val checkingIn = habit != null && !habit.isCompletedToday
         viewModelScope.launch {
             repository.toggleHabitCheckIn(habitId)
+            if (checkingIn && habit != null) celebrateCheckIn(state, habit)
         }
+    }
+
+    // Surprise encouragement: a new streak milestone outranks a perfect day,
+    // which outranks an ordinary check-in.
+    private fun celebrateCheckIn(state: HabitsUiState, habit: com.example.model.Habit) {
+        val newStreak = habit.currentStreak + 1
+        when {
+            newStreak in streakMilestones ->
+                CelebrationCenter.celebrate(CelebrationKind.HABIT_STREAK, newStreak)
+            state.totalCount > 0 && state.completedTodayCount + 1 >= state.totalCount ->
+                CelebrationCenter.celebrate(CelebrationKind.ALL_HABITS_DONE)
+            else ->
+                CelebrationCenter.celebrate(CelebrationKind.HABIT_DONE)
+        }
+    }
+
+    private companion object {
+        val streakMilestones = setOf(3, 7, 15, 21, 30, 50, 100, 200, 365)
     }
 
     fun addHabit(
