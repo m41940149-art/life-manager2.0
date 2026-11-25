@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.auth.LoginScreen
+import com.example.ui.celebration.CelebrationHost
 import com.example.ui.components.AppTab
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.BottomNavBar
@@ -135,6 +136,9 @@ fun MainScreen(
                         }
                     }
                 }
+
+                // Joyful surprises overlay every tab when something is achieved.
+                CelebrationHost(isArabic = isArabic)
             }
         }
     }
