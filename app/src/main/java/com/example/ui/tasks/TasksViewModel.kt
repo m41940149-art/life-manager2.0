@@ -7,8 +7,11 @@ import com.example.data.TaskRepository
 import com.example.model.RecurrenceType
 import com.example.model.Task
 import com.example.model.TaskPriority
+import com.example.ui.celebration.CelebrationCenter
+import com.example.ui.celebration.CelebrationKind
 import com.example.util.DateTimeUtils
 import com.example.util.TaskRecurrence
+import java.util.Calendar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -177,9 +180,55 @@ class TasksViewModel(
     }
 
     fun toggleTask(taskId: String) {
+        val state = uiState.value
+        val task = state.allTasks.find { it.id == taskId }
+        val completing = task != null && !task.isCompleted
         viewModelScope.launch {
             repository.toggleTaskCompletion(taskId)
+            if (completing) celebrateCompletion(state)
         }
+    }
+
+    // Surprise encouragement: picks the rarest milestone this completion unlocked,
+    // falling back to an ordinary pat on the back.
+    private fun celebrateCompletion(state: TasksUiState) {
+        val newTodayCount = state.todayCompletedCount + 1
+        when {
+            state.todayTotalCount > 0 && newTodayCount >= state.todayTotalCount ->
+                CelebrationCenter.celebrate(CelebrationKind.ALL_TASKS_DONE)
+            taskDayStreak(state) in dayStreakMilestones ->
+                CelebrationCenter.celebrate(CelebrationKind.TASK_DAY_STREAK, taskDayStreak(state))
+            totalCompleted(state) in totalMilestones ->
+                CelebrationCenter.celebrate(CelebrationKind.TASK_TOTAL_MILESTONE, totalCompleted(state))
+            newTodayCount in todayCountMilestones ->
+                CelebrationCenter.celebrate(CelebrationKind.TASK_COUNT_MILESTONE, newTodayCount)
+            else ->
+                CelebrationCenter.celebrate(CelebrationKind.TASK_DONE)
+        }
+    }
+
+    // Consecutive days ending today with at least one completed task, counting the
+    // completion that just happened (its completedAt is written asynchronously).
+    private fun taskDayStreak(state: TasksUiState): Int {
+        val days = state.allTasks.mapNotNull { it.completedAt }
+            .map { DateTimeUtils.getStartOfDay(it) }.toMutableSet()
+        days.add(DateTimeUtils.getTodayStartOfDay())
+        val cal = Calendar.getInstance().apply { timeInMillis = DateTimeUtils.getTodayStartOfDay() }
+        var streak = 0
+        while (cal.timeInMillis in days) {
+            streak++
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+        }
+        return streak
+    }
+
+    private fun totalCompleted(state: TasksUiState) =
+        state.allTasks.count { it.isCompleted } + 1
+
+    private companion object {
+        val dayStreakMilestones = setOf(3, 7, 15, 21, 30, 50, 100, 200, 365)
+        val totalMilestones = setOf(10, 25, 50, 100, 250, 500, 1000)
+        val todayCountMilestones = setOf(5, 10, 20)
     }
 
     fun setTaskToDelete(task: Task?) {
