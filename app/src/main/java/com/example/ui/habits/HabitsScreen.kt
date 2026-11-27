@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Loop
@@ -179,7 +180,8 @@ fun HabitsScreen(
                     Triple(AppTab.GOALS, Icons.Filled.Flag, if (isArabic) "الأهداف" else "Goals"),
                     Triple(AppTab.TIMER, Icons.Filled.Timer, if (isArabic) "المؤقت" else "Timer"),
                     Triple(AppTab.DATA, Icons.Filled.Folder, if (isArabic) "البيانات" else "Data"),
-                    Triple(AppTab.SURVEYS, Icons.Filled.Assignment, if (isArabic) "الاستبيانات" else "Surveys")
+                    Triple(AppTab.SURVEYS, Icons.Filled.Assignment, if (isArabic) "الاستبيانات" else "Surveys"),
+                    Triple(AppTab.FILES, Icons.Filled.FolderOpen, if (isArabic) "الملفات" else "Files")
                 ).forEach { (tab, icon, label) ->
                     Card(
                         onClick = { onNavigateToTab(tab) },
