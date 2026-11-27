@@ -1,8 +1,6 @@
 package com.example.ui.habits
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -43,12 +40,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Assignment
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,7 +64,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.components.AppTab
 import com.example.ui.components.EmptyStateView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,7 +71,6 @@ import com.example.ui.components.EmptyStateView
 fun HabitsScreen(
     viewModel: HabitsViewModel,
     isArabic: Boolean,
-    onNavigateToTab: (AppTab) -> Unit = {},
     modifier: Modifier = Modifier,
     nowMillis: () -> Long = { System.currentTimeMillis() }
 ) {
@@ -167,55 +156,6 @@ fun HabitsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Home quick-navigation bars to all other pages
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    Triple(AppTab.TASKS, Icons.Filled.CheckCircle, if (isArabic) "المهام" else "Tasks"),
-                    Triple(AppTab.GOALS, Icons.Filled.Flag, if (isArabic) "الأهداف" else "Goals"),
-                    Triple(AppTab.TIMER, Icons.Filled.Timer, if (isArabic) "المؤقت" else "Timer"),
-                    Triple(AppTab.DATA, Icons.Filled.Folder, if (isArabic) "البيانات" else "Data"),
-                    Triple(AppTab.SURVEYS, Icons.Filled.Assignment, if (isArabic) "الاستبيانات" else "Surveys"),
-                    Triple(AppTab.FILES, Icons.Filled.FolderOpen, if (isArabic) "الملفات" else "Files")
-                ).forEach { (tab, icon, label) ->
-                    Card(
-                        onClick = { onNavigateToTab(tab) },
-                        modifier = Modifier
-                            .width(96.dp)
-                            .height(64.dp)
-                            .testTag("home_nav_" + tab.tag),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = label,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = label,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
             // Header Progress Card (only shown when user has habits)
             if (uiState.habits.isNotEmpty()) {
                 val scheduledTodayCount = uiState.habits.count { it.isScheduledToday }
