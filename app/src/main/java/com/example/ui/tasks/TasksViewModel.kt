@@ -277,6 +277,19 @@ class TasksViewModel(
         }
     }
 
+    /** Saves imported tasks, then reports their ids so the caller can offer Undo. */
+    fun importTasks(tasks: List<Task>, onDone: (List<String>) -> Unit) {
+        viewModelScope.launch {
+            tasks.forEach { repository.addTask(it) }
+            onDone(tasks.map { it.id })
+        }
+    }
+
+    /** Undo of an import: deletes exactly the tasks that import added. */
+    fun undoImport(ids: List<String>) {
+        viewModelScope.launch { ids.forEach { repository.deleteTask(it) } }
+    }
+
     fun updateTask(
         id: String,
         title: String,
