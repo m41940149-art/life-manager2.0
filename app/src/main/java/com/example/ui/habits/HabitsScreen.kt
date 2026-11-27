@@ -140,13 +140,13 @@ fun HabitsScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape,
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(46.dp)
                     .testTag("add_habit_fab")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = if (isArabic) "إضافة عادة" else "Add Habit",
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -166,8 +166,8 @@ fun HabitsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
                     )
@@ -175,7 +175,7 @@ fun HabitsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -185,11 +185,10 @@ fun HabitsScreen(
                             Column {
                                 Text(
                                     text = if (isArabic) "العادات اليومية" else "Today's Habits",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isArabic) {
                                         "${uiState.completedTodayCount} من $scheduledTodayCount عادات مكتملة اليوم"
@@ -208,22 +207,22 @@ fun HabitsScreen(
                             ) {
                                 Text(
                                     text = "${(progress * 100).toInt()}%",
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         LinearProgressIndicator(
                             progress = { progress },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
