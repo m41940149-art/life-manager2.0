@@ -23,6 +23,7 @@ import com.example.ui.components.AppTab
 import com.example.ui.components.AppTopBar
 import com.example.ui.data.PersonalDataScreen
 import com.example.ui.data.PersonalDataViewModel
+import com.example.ui.files.FilesScreen
 import com.example.ui.goals.GoalsScreen
 import com.example.ui.goals.GoalsViewModel
 import com.example.ui.habits.HabitsScreen
@@ -127,6 +128,9 @@ fun MainScreen(
                         }
                         AppTab.TIMER -> {
                             TimerScreen(isArabic = isArabic)
+                        }
+                        AppTab.FILES -> {
+                            FilesScreen(isArabic = isArabic)
                         }
                     }
                 }
