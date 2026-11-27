@@ -8,12 +8,14 @@ import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
@@ -42,7 +44,8 @@ enum class AppTab(
     GOALS("الأهداف", "Goals", Icons.Filled.Flag, Icons.Outlined.Flag, "tab_goals"),
     DATA("البيانات", "Data", Icons.Filled.Folder, Icons.Outlined.Folder, "tab_data"),
     SURVEYS("الاستبيانات", "Surveys", Icons.Filled.Assignment, Icons.Outlined.Assignment, "tab_surveys"),
-    TIMER("المؤقت", "Timer", Icons.Filled.Timer, Icons.Outlined.Timer, "tab_timer")
+    TIMER("المؤقت", "Timer", Icons.Filled.Timer, Icons.Outlined.Timer, "tab_timer"),
+    FILES("الملفات", "Files", Icons.Filled.FolderOpen, Icons.Outlined.FolderOpen, "tab_files")
 }
 
 @Composable
