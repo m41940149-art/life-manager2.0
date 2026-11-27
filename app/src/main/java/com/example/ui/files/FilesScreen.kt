@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items as listItems
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
@@ -119,9 +122,51 @@ private val baseFolders = listOf(
     BaseFolder("الفيديوهات", "Videos", Environment.DIRECTORY_MOVIES)
 )
 
-private val imageExts = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
-private val videoExts = setOf("mp4", "mkv", "avi", "3gp", "webm", "mov", "m4v")
-private val audioExts = setOf("mp3", "wav", "m4a", "aac", "ogg", "oga", "flac", "amr", "opus")
+private val imageExts = setOf(
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "tif", "tiff",
+    "svg", "ico", "raw", "dng", "cr2", "nef", "arw"
+)
+private val videoExts = setOf(
+    "mp4", "mkv", "avi", "3gp", "3g2", "webm", "mov", "m4v", "wmv", "flv", "mpg", "mpeg", "vob"
+)
+private val audioExts = setOf(
+    "mp3", "wav", "m4a", "aac", "ogg", "oga", "flac", "amr", "opus", "wma", "mid", "midi", "aif", "aiff", "mka"
+)
+private val documentExts = setOf(
+    "pdf", "doc", "docx", "dot", "dotx", "odt", "rtf", "txt", "md", "xls", "xlsx", "xlsm", "csv", "ods",
+    "ppt", "pptx", "pps", "ppsx", "odp", "epub", "mobi", "djvu", "pages", "numbers", "key",
+    "apk", "xapk", "apks", "aab", "zip", "rar", "7z", "tar", "gz", "json", "xml", "html", "htm",
+    "vcf", "ics", "log", "tex"
+)
+
+/** Scan the whole storage for every file whose extension belongs to [cat]. */
+private fun scanCategory(cat: BaseFolder): List<FileItem> {
+    val root = Environment.getExternalStorageDirectory()
+    val matcher: (String) -> Boolean = when (cat.nameEn) {
+        "Photos" -> { n -> extOf(n) in imageExts }
+        "Videos" -> { n -> extOf(n) in videoExts }
+        "Audio" -> { n -> extOf(n) in audioExts }
+        else -> { n -> extOf(n) in documentExts }
+    }
+    val out = ArrayList<FileItem>()
+    val stack = java.util.ArrayDeque<File>()
+    stack.add(root)
+    while (stack.isNotEmpty()) {
+        val d = stack.removeLast()
+        val kids = d.listFiles() ?: continue
+        for (f in kids) {
+            if (f.name.startsWith(".")) continue
+            if (f.isDirectory) {
+                // Android/ holds other apps' private data and is not readable anyway.
+                if (d.absolutePath == root.absolutePath && f.name == "Android") continue
+                stack.add(f)
+            } else if (matcher(f.name)) {
+                out.add(FileItem(f, false, f.name, f.length(), f.lastModified()))
+            }
+        }
+    }
+    return out.sortedByDescending { it.lastModified }
+}
 
 private fun extOf(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.US)
 private fun isImage(name: String) = extOf(name) in imageExts
@@ -139,8 +184,9 @@ private fun hasStorageAccess(context: android.content.Context): Boolean {
     }
 }
 
-private fun listDirContents(dir: File?): List<FileItem> {
+private fun listDirContents(dir: File?, category: BaseFolder? = null, showOthers: Boolean = true): List<FileItem> {
     val storageRoot = Environment.getExternalStorageDirectory()
+    if (category != null) return scanCategory(category)
     if (dir == null) {
         // Root view: the four base folders first (always visible), then any
         // other folders and files sitting at the storage root.
@@ -157,7 +203,7 @@ private fun listDirContents(dir: File?): List<FileItem> {
             .map { f ->
                 FileItem(f, f.isDirectory, f.name, if (f.isFile) f.length() else 0L, f.lastModified())
             }
-        return baseItems + sortItems(others)
+        return if (showOthers) baseItems + sortItems(others) else baseItems
     }
     val children = (dir.listFiles() ?: emptyArray())
         .filter { !it.name.startsWith(".") }
@@ -216,6 +262,8 @@ fun FilesScreen(
     }
 
     var currentDir by remember { mutableStateOf<File?>(null) }
+    var category by remember { mutableStateOf<BaseFolder?>(null) }
+    var showOthers by remember { mutableStateOf(false) }
     var refreshTick by remember { mutableIntStateOf(0) }
     var gridMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -224,8 +272,9 @@ fun FilesScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
 
-    val items by produceState<List<FileItem>?>(initialValue = null, currentDir, refreshTick) {
-        value = withContext(Dispatchers.IO) { listDirContents(currentDir) }
+    val items by produceState<List<FileItem>?>(initialValue = null, currentDir, category, showOthers, refreshTick) {
+        value = null
+        value = withContext(Dispatchers.IO) { listDirContents(currentDir, category, showOthers) }
     }
 
     fun refresh() { refreshTick++ }
@@ -303,11 +352,15 @@ fun FilesScreen(
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (currentDir != null) {
+                if (currentDir != null || category != null) {
                     IconButton(onClick = {
-                        val parent = currentDir?.parentFile
-                        val root = Environment.getExternalStorageDirectory()
-                        currentDir = if (parent == null || parent.absolutePath == root.absolutePath) null else parent
+                        if (category != null) {
+                            category = null
+                        } else {
+                            val parent = currentDir?.parentFile
+                            val root = Environment.getExternalStorageDirectory()
+                            currentDir = if (parent == null || parent.absolutePath == root.absolutePath) null else parent
+                        }
                     }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -317,6 +370,7 @@ fun FilesScreen(
                 }
                 Text(
                     text = when {
+                        category != null -> category?.let { if (isArabic) it.nameAr else it.nameEn } ?: ""
                         currentDir == null -> if (isArabic) "الملفات" else "Files"
                         else -> currentDir?.name ?: ""
                     },
@@ -370,8 +424,10 @@ fun FilesScreen(
                 }
             }
         } else if (!gridMode) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                listItems(list, key = { it.file.absolutePath }) { item ->
+            val atRoot = currentDir == null && category == null
+            val head = if (atRoot) list.take(baseFolders.size) else list
+            val tail = if (atRoot) list.drop(baseFolders.size) else emptyList()
+            val rowContent: @Composable (FileItem) -> Unit = { item ->
                     FileRow(
                         item = item,
                         isArabic = isArabic,
@@ -384,8 +440,14 @@ fun FilesScreen(
                                     selected = if (p in selected) selected - p else selected + p
                                 }
                                 item.isDir -> {
-                                    if (!item.file.exists()) item.file.mkdirs()
-                                    currentDir = item.file
+                                    val baseMatch = if (currentDir == null && category == null)
+                                        baseFolders.firstOrNull { it.dirName == item.name } else null
+                                    if (baseMatch != null) {
+                                        category = baseMatch
+                                    } else {
+                                        if (!item.file.exists()) item.file.mkdirs()
+                                        currentDir = item.file
+                                    }
                                 }
                                 else -> openFile(item)
                             }
@@ -395,17 +457,19 @@ fun FilesScreen(
                             selected = if (p in selected) selected - p else selected + p
                         }
                     )
+            }
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                listItems(head, key = { it.file.absolutePath }) { item -> rowContent(item) }
+                if (atRoot) {
+                    item(key = "toggle-others") { OthersToggle(isArabic, showOthers) { showOthers = !showOthers } }
+                    listItems(tail, key = { it.file.absolutePath }) { item -> rowContent(item) }
                 }
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                gridItems(list, key = { it.file.absolutePath }) { item ->
+            val atRoot = currentDir == null && category == null
+            val head = if (atRoot) list.take(baseFolders.size) else list
+            val tail = if (atRoot) list.drop(baseFolders.size) else emptyList()
+            val cardContent: @Composable (FileItem) -> Unit = { item ->
                     FileCard(
                         item = item,
                         isArabic = isArabic,
@@ -418,8 +482,14 @@ fun FilesScreen(
                                     selected = if (p in selected) selected - p else selected + p
                                 }
                                 item.isDir -> {
-                                    if (!item.file.exists()) item.file.mkdirs()
-                                    currentDir = item.file
+                                    val baseMatch = if (currentDir == null && category == null)
+                                        baseFolders.firstOrNull { it.dirName == item.name } else null
+                                    if (baseMatch != null) {
+                                        category = baseMatch
+                                    } else {
+                                        if (!item.file.exists()) item.file.mkdirs()
+                                        currentDir = item.file
+                                    }
                                 }
                                 else -> openFile(item)
                             }
@@ -429,6 +499,20 @@ fun FilesScreen(
                             selected = if (p in selected) selected - p else selected + p
                         }
                     )
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                gridItems(head, key = { it.file.absolutePath }) { item -> cardContent(item) }
+                if (atRoot) {
+                    item(key = "toggle-others", span = { GridItemSpan(maxLineSpan) }) {
+                        OthersToggle(isArabic, showOthers) { showOthers = !showOthers }
+                    }
+                    gridItems(tail, key = { it.file.absolutePath }) { item -> cardContent(item) }
                 }
             }
         }
@@ -958,4 +1042,34 @@ private fun MoveDialog(
             }
         }
     )
+}
+
+
+@Composable
+private fun OthersToggle(isArabic: Boolean, expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(onClick = onToggle, onLongClick = {})
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (isArabic) "عرض أو إخفاء باقي الملفات" else "Show or hide other files",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = if (expanded)
+                (if (isArabic) "إخفاء باقي الملفات" else "Hide other files")
+            else
+                (if (isArabic) "عرض باقي الملفات" else "Show other files"),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
 }
