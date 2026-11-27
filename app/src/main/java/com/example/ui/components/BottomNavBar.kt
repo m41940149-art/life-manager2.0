@@ -37,8 +37,8 @@ enum class AppTab(
     val unselectedIcon: ImageVector,
     val tag: String
 ) {
-    TASKS("المهام", "Tasks", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircle, "tab_tasks"),
     HABITS("العادات", "Habits", Icons.Filled.LocalFireDepartment, Icons.Outlined.LocalFireDepartment, "tab_habits"),
+    TASKS("المهام", "Tasks", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircle, "tab_tasks"),
     GOALS("الأهداف", "Goals", Icons.Filled.Flag, Icons.Outlined.Flag, "tab_goals"),
     DATA("البيانات", "Data", Icons.Filled.Folder, Icons.Outlined.Folder, "tab_data"),
     SURVEYS("الاستبيانات", "Surveys", Icons.Filled.Assignment, Icons.Outlined.Assignment, "tab_surveys"),
