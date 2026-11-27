@@ -41,6 +41,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -86,6 +93,9 @@ fun TasksScreen(
     val taskToEdit by viewModel.taskToEdit.collectAsState()
 
     var showAddSheet by remember { mutableStateOf(false) }
+    var showImportSheet by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val importScope = rememberCoroutineScope()
 
     // Track collapsed state for groups
     val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
@@ -93,6 +103,7 @@ fun TasksScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -228,6 +239,16 @@ fun TasksScreen(
                         modifier = Modifier.testTag("filter_chip_${filter.name.lowercase()}")
                     )
                 }
+            }
+
+            // Bulk import: opens the Copy (prompt) and Paste pages
+            OutlinedButton(
+                onClick = { showImportSheet = true },
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .testTag("import_tasks_button")
+            ) {
+                Text(if (isArabic) "استيراد مهام (نسخ / لصق)" else "Import tasks (Copy / Paste)")
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -370,6 +391,27 @@ fun TasksScreen(
                         )
                     }
                 }
+            )
+        }
+
+        if (showImportSheet) {
+            TaskImportSheet(
+                isArabic = isArabic,
+                existing = uiState.allTasks,
+                onConfirm = { tasks ->
+                    showImportSheet = false
+                    viewModel.importTasks(tasks) { ids ->
+                        importScope.launch {
+                            val r = snackbarHostState.showSnackbar(
+                                message = if (isArabic) "تمت إضافة ${ids.size} مهمة" else "Added ${ids.size} tasks",
+                                actionLabel = if (isArabic) "تراجع" else "Undo",
+                                duration = SnackbarDuration.Long
+                            )
+                            if (r == SnackbarResult.ActionPerformed) viewModel.undoImport(ids)
+                        }
+                    }
+                },
+                onDismiss = { showImportSheet = false }
             )
         }
 
