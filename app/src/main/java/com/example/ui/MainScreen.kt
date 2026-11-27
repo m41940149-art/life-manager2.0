@@ -31,6 +31,7 @@ import com.example.ui.data.PersonalDataViewModel
 import com.example.ui.files.FilesScreen
 import com.example.ui.goals.GoalsScreen
 import com.example.ui.goals.GoalsViewModel
+import com.example.ui.habits.HabitReviewHost
 import com.example.ui.habits.HabitsScreen
 import com.example.ui.habits.HabitsViewModel
 import com.example.ui.surveys.SurveysScreen
@@ -165,6 +166,8 @@ fun MainScreen(
 
                 // Joyful surprises overlay every tab when something is achieved.
                 CelebrationHost(isArabic = isArabic)
+                // Asks about the morning / evening habits once their window has ended.
+                HabitReviewHost(isArabic = isArabic)
             }
         }
         }
