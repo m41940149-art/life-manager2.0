@@ -144,7 +144,10 @@ private fun listDirContents(dir: File?): List<FileItem> {
     if (dir == null) {
         // Root view: the four base folders first (always visible), then any
         // other folders and files sitting at the storage root.
+        // Create the base folders when missing so they are real, browsable
+        // targets (some phones lack Documents/Music/Movies by default).
         val baseDirs = baseFolders.map { File(storageRoot, it.dirName) }
+        baseDirs.forEach { if (!it.exists()) it.mkdirs() }
         val basePaths = baseDirs.map { it.absolutePath }.toSet()
         val baseItems = baseDirs.map { f ->
             FileItem(f, true, f.name, 0L, if (f.exists()) f.lastModified() else 0L)
@@ -858,15 +861,33 @@ private fun MoveDialog(
     onDismiss: () -> Unit,
     onPick: (File) -> Unit
 ) {
-    var pickerDir by remember { mutableStateOf(Environment.getExternalStorageDirectory()) }
+    val storageRoot = Environment.getExternalStorageDirectory()
+    var pickerDir by remember { mutableStateOf(storageRoot) }
     val subdirs by produceState<List<File>>(initialValue = emptyList(), pickerDir) {
         value = withContext(Dispatchers.IO) {
+            // At the root, make sure the four base folders exist so they can
+            // be picked as move destinations, then list real folders.
+            if (pickerDir.absolutePath == storageRoot.absolutePath) {
+                baseFolders.forEach { val f = File(storageRoot, it.dirName); if (!f.exists()) f.mkdirs() }
+            }
             (pickerDir.listFiles() ?: emptyArray())
                 .filter { it.isDirectory && !it.name.startsWith(".") && it.absolutePath !in blockedPaths }
-                .sortedBy { it.name.lowercase(Locale.getDefault()) }
+                .sortedWith(
+                    compareBy(
+                        { baseFolders.indexOfFirst { bf -> bf.dirName == it.name && it.parentFile?.absolutePath == storageRoot.absolutePath }.let { i -> if (i < 0) Int.MAX_VALUE else i } },
+                        { it.name.lowercase(Locale.getDefault()) }
+                    )
+                )
         }
     }
-    val isRoot = pickerDir.absolutePath == Environment.getExternalStorageDirectory().absolutePath
+    val isRoot = pickerDir.absolutePath == storageRoot.absolutePath
+
+    fun pickerLabel(dir: File): String {
+        val match = baseFolders.firstOrNull {
+            it.dirName == dir.name && dir.parentFile?.absolutePath == storageRoot.absolutePath
+        }
+        return if (match != null) (if (isArabic) match.nameAr else match.nameEn) else dir.name
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -884,7 +905,7 @@ private fun MoveDialog(
                 }
                 Text(
                     text = (if (isArabic) "نقل إلى: " else "Move to: ") +
-                        (if (isRoot) (if (isArabic) "الرئيسية" else "Storage root") else pickerDir.name),
+                        (if (isRoot) (if (isArabic) "الرئيسية" else "Storage root") else pickerLabel(pickerDir)),
                     fontSize = 16.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -916,7 +937,7 @@ private fun MoveDialog(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                dir.name,
+                                pickerLabel(dir),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 fontSize = 14.sp
