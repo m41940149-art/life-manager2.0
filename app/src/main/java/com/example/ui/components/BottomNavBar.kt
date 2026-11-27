@@ -61,7 +61,9 @@ fun BottomNavBar(
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 6.dp
     ) {
-        AppTab.values().forEach { tab ->
+        // Bottom bar holds only the two main pages: Habits (home) and Files.
+        // The rest of the pages are reached from the side drawer.
+        listOf(AppTab.HABITS, AppTab.FILES).forEach { tab ->
             val selected = currentTab == tab
             NavigationBarItem(
                 selected = selected,
