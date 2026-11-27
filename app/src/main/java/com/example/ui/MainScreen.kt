@@ -21,7 +21,6 @@ import com.example.ui.auth.LoginScreen
 import com.example.ui.celebration.CelebrationHost
 import com.example.ui.components.AppTab
 import com.example.ui.components.AppTopBar
-import com.example.ui.components.BottomNavBar
 import com.example.ui.data.PersonalDataScreen
 import com.example.ui.data.PersonalDataViewModel
 import com.example.ui.goals.GoalsScreen
@@ -80,13 +79,6 @@ fun MainScreen(
                         onAccountClick = { showLogin = true }
                     )
                 }
-            },
-            bottomBar = {
-                BottomNavBar(
-                    currentTab = currentTab,
-                    onTabSelected = { currentTab = it },
-                    isArabic = isArabic
-                )
             },
             modifier = modifier.fillMaxSize()
         ) { innerPadding ->
