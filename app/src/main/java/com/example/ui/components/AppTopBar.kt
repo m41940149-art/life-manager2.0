@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -47,6 +48,8 @@ fun AppTopBar(
     onToggleLanguage: () -> Unit,
     onToggleTheme: () -> Unit,
     onAccountClick: () -> Unit = {},
+    onMenuClick: (() -> Unit)? = null,
+    showControls: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -64,8 +67,24 @@ fun AppTopBar(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Hamburger: opens the side drawer with the rest of the pages.
+                // Sits at the start of the row (top-right in Arabic RTL).
+                if (onMenuClick != null) {
+                    IconButton(
+                        onClick = onMenuClick,
+                        modifier = Modifier.testTag("menu_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = if (isArabic) "القائمة" else "Menu",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
 
+                if (showControls) {
                 // Language toggle pill
                 AssistChip(
                     onClick = onToggleLanguage,
@@ -114,6 +133,7 @@ fun AppTopBar(
                         contentDescription = "Toggle theme",
                         tint = MaterialTheme.colorScheme.primary
                     )
+                }
                 }
             }
         }
