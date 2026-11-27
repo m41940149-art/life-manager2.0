@@ -99,7 +99,7 @@ fun HabitItemCard(
     }
 
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (habit.isCompletedToday) {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
@@ -116,7 +116,7 @@ fun HabitItemCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -259,7 +259,7 @@ fun HabitItemCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Metadata Row: Streak Badge, Schedule, Milestone
             FlowRow(
@@ -415,35 +415,35 @@ fun HabitItemCard(
                         ) {
                             Button(
                                 onClick = { onResolveMissed(habit.id, habit.pendingMissedDate, true) },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary
                                 ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(38.dp)
+                                    .height(32.dp)
                                     .testTag("yes_completed_btn_${habit.id}")
                             ) {
                                 Text(
                                     text = if (isArabic) "نعم، أنجزتها" else "Yes, I completed it",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
 
                             OutlinedButton(
                                 onClick = { onResolveMissed(habit.id, habit.pendingMissedDate, false) },
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(38.dp)
+                                    .height(32.dp)
                                     .testTag("break_streak_btn_${habit.id}")
                             ) {
                                 Text(
                                     text = if (isArabic) "قطع السلسلة" else "Break the streak",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
