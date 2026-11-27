@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // Side drawer content: lists the other pages of the app.
-// The current page is left out; Habits and Files are also in the bottom bar.
+// The current page is left out; Habits, Tasks and Files are also in the bottom bar.
 @Composable
 fun AppDrawerContent(
     currentTab: AppTab,
@@ -38,7 +38,8 @@ fun AppDrawerContent(
         Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider()
         Spacer(modifier = Modifier.height(8.dp))
-        AppTab.values().filter { it != currentTab }.forEach { tab ->
+        // Tasks sits in the bottom bar now, so the drawer does not repeat it.
+        AppTab.values().filter { it != currentTab && it != AppTab.TASKS }.forEach { tab ->
             NavigationDrawerItem(
                 selected = false,
                 onClick = { onTabSelected(tab) },
