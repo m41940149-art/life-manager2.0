@@ -1045,6 +1045,7 @@ private fun MoveDialog(
 }
 
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun OthersToggle(isArabic: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     Row(
