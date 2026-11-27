@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,7 +37,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -131,46 +131,72 @@ fun HabitReviewHost(isArabic: Boolean) {
 
     val current = request ?: return
     val isMorning = current.group == HabitTimeGroup.MORNING
-    val answers = remember(current.key) { mutableStateMapOf<String, Boolean>() }
+    var remaining by remember(current.key) { mutableStateOf(current.habits) }
+
+    // When every habit has been answered, the review is done for this window.
+    LaunchedEffect(remaining) {
+        if (remaining.isEmpty()) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(current.key, true).apply()
+            request = null
+        }
+    }
 
     Dialog(
         onDismissRequest = { snoozedKey = current.key; request = null },
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Surface(
             modifier = Modifier.fillMaxSize().testTag("habit_review_screen"),
             color = MaterialTheme.colorScheme.background
         ) {
             Column(
-                modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(16.dp)
             ) {
-                Text(
-                    text = if (isMorning) {
-                        if (isArabic) "هذه مهام الصباح" else "These are your morning habits"
-                    } else {
-                        if (isArabic) "هذه مهام المساء" else "These are your evening habits"
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (isArabic) {
-                        if (isMorning) "حدّد ما أنجزته مما فاتك وما لم تنجزه." else "حدّد ما أنجزته من عادات أمس المسائية وما لم تنجزه."
-                    } else {
-                        if (isMorning) "Mark which ones you did and which you did not."
-                        else "Mark which of yesterday's evening habits you did and which you did not."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = if (isMorning) {
+                                if (isArabic) "هذه مهام الصباح" else "These are your morning habits"
+                            } else {
+                                if (isArabic) "هذه مهام المساء" else "These are your evening habits"
+                            },
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (isArabic) {
+                                if (isMorning) "حدّد ما أنجزته مما فاتك وما لم تنجزه." else "حدّد ما أنجزته من عادات أمس المسائية وما لم تنجزه."
+                            } else {
+                                if (isMorning) "Mark which ones you did and which you did not."
+                                else "Mark which of yesterday's evening habits you did and which you did not."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(
+                        onClick = { snoozedKey = current.key; request = null },
+                        modifier = Modifier.testTag("review_later")
+                    ) { Text(if (isArabic) "لاحقًا" else "Later") }
+                }
                 Spacer(Modifier.height(12.dp))
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(current.habits, key = { it.id }) { habit ->
-                        val done = answers[habit.id]
+                    items(remaining, key = { it.id }) { habit ->
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.surface,
@@ -187,13 +213,17 @@ fun HabitReviewHost(isArabic: Boolean) {
                                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
+                                // Tapping applies the answer immediately; no confirm step.
                                 Button(
-                                    onClick = { answers[habit.id] = true },
+                                    onClick = {
+                                        val repo = AppContainer.habitRepository
+                                        val day = current.dateTimestamp
+                                        remaining = remaining - habit
+                                        scope.launch { repo.completeMissedOccurrence(habit.id, day) }
+                                    },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.height(34.dp).testTag("review_done_${habit.id}"),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
-                                    colors = if (done == true) androidx.compose.material3.ButtonDefaults.buttonColors()
-                                    else androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                                 ) {
                                     Icon(Icons.Default.Check, null, Modifier.size(16.dp))
                                     Spacer(Modifier.size(4.dp))
@@ -201,14 +231,15 @@ fun HabitReviewHost(isArabic: Boolean) {
                                 }
                                 Spacer(Modifier.size(6.dp))
                                 OutlinedButton(
-                                    onClick = { answers[habit.id] = false },
+                                    onClick = {
+                                        val repo = AppContainer.habitRepository
+                                        val day = current.dateTimestamp
+                                        remaining = remaining - habit
+                                        scope.launch { repo.breakMissedOccurrence(habit.id, day) }
+                                    },
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.height(34.dp).testTag("review_missed_${habit.id}"),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
-                                    border = BorderStroke(
-                                        if (done == false) 2.dp else 1.dp,
-                                        if (done == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
-                                    )
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                                 ) {
                                     Icon(Icons.Default.Close, null, Modifier.size(16.dp))
                                     Spacer(Modifier.size(4.dp))
@@ -217,34 +248,6 @@ fun HabitReviewHost(isArabic: Boolean) {
                             }
                         }
                     }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = { snoozedKey = current.key; request = null },
-                        modifier = Modifier.weight(1f).testTag("review_later")
-                    ) { Text(if (isArabic) "لاحقًا" else "Later") }
-                    Button(
-                        onClick = {
-                            val repo = AppContainer.habitRepository
-                            val review = current
-                            scope.launch {
-                                review.habits.forEach { habit ->
-                                    when (answers[habit.id]) {
-                                        true -> repo.completeMissedOccurrence(habit.id, review.dateTimestamp)
-                                        false -> repo.breakMissedOccurrence(habit.id, review.dateTimestamp)
-                                        null -> Unit // left unanswered: stays open for the normal prompt
-                                    }
-                                }
-                                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                                    .edit().putBoolean(review.key, true).apply()
-                            }
-                            request = null
-                        },
-                        enabled = answers.isNotEmpty(),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(2f).testTag("review_confirm")
-                    ) { Text(if (isArabic) "تأكيد" else "Confirm") }
                 }
             }
         }
