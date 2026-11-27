@@ -106,7 +106,7 @@ fun MainScreen(
                 )
             },
             bottomBar = {
-                // Bottom bar stays visible on every page: Habits and Files only.
+                // Bottom bar stays visible on every page: Habits, Tasks and Files.
                 BottomNavBar(
                     currentTab = currentTab,
                     onTabSelected = { currentTab = it },
