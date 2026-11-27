@@ -41,7 +41,7 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     var isArabic by remember { mutableStateOf(true) }
-    var currentTab by remember { mutableStateOf(AppTab.TASKS) }
+    var currentTab by remember { mutableStateOf(AppTab.HABITS) }
     var showLogin by remember { mutableStateOf(false) }
 
     val tasksViewModel: TasksViewModel = viewModel()
@@ -54,6 +54,7 @@ fun MainScreen(
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         BackHandler(enabled = showLogin) { showLogin = false }
+        BackHandler(enabled = !showLogin && currentTab != AppTab.HABITS) { currentTab = AppTab.HABITS }
 
         if (showLogin) {
             LoginScreen(
@@ -64,7 +65,7 @@ fun MainScreen(
         }
 
         // The app bar (language / theme / account) lives on the Home tab only.
-        val isHome = currentTab == AppTab.TASKS
+        val isHome = currentTab == AppTab.HABITS
 
         Scaffold(
             topBar = {
@@ -110,7 +111,8 @@ fun MainScreen(
                         AppTab.HABITS -> {
                             HabitsScreen(
                                 viewModel = habitsViewModel,
-                                isArabic = isArabic
+                                isArabic = isArabic,
+                                onNavigateToTab = { currentTab = it }
                             )
                         }
                         AppTab.GOALS -> {
