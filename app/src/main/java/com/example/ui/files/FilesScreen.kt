@@ -8,6 +8,7 @@ import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -39,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -62,6 +64,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -111,8 +115,14 @@ import java.util.Locale
 // The four base folders (Pictures, Music, Documents, Movies) are real
 // folders on the phone: they are created on disk when the page opens and they
 // cannot be renamed, moved or deleted from here. Tapping one opens a category
-// view that gathers matching files from the whole storage, with the folder's
-// own subfolders listed first.
+// view, with the folder's own subfolders listed first.
+//
+// Photos, Videos and Audio come from MediaStore - the same index the phone's
+// gallery uses - so everything visible in the gallery appears here and no
+// app-private files do. The Files (documents) category scans only the user's
+// own well-known folders (Documents, Download) and only real document types,
+// so app/system files (xml, json, db, caches, hidden files) never appear and
+// cannot be harmed from here.
 // ---------------------------------------------------------------------------
 
 private data class FileItem(
@@ -140,46 +150,133 @@ private val videoExts = setOf(
 private val audioExts = setOf(
     "mp3", "wav", "m4a", "aac", "ogg", "oga", "flac", "amr", "opus", "wma", "mid", "midi", "aif", "aiff", "mka"
 )
+// Documents the user owns. Deliberately excludes app/system file types
+// (xml, json, db, log, ini...) so config and app-data files stay hidden.
 private val documentExts = setOf(
     "pdf", "doc", "docx", "dot", "dotx", "odt", "rtf", "txt", "md", "xls", "xlsx", "xlsm", "csv", "ods",
     "ppt", "pptx", "pps", "ppsx", "odp", "epub", "mobi", "djvu", "pages", "numbers", "key",
-    "apk", "xapk", "apks", "aab", "zip", "rar", "7z", "tar", "gz", "json", "xml", "html", "htm",
-    "vcf", "ics", "log", "tex"
+    "apk", "xapk", "apks", "aab", "zip", "rar", "7z", "tar", "gz", "html", "htm",
+    "vcf", "ics", "tex"
 )
 
-/** Scan the whole storage for every file whose extension belongs to [cat]. */
-private fun scanCategory(cat: BaseFolder): List<FileItem> {
-    val root = storageRoot()
-    val matcher: (String) -> Boolean = when (cat.nameEn) {
-        "Photos" -> { n -> extOf(n) in imageExts }
-        "Videos" -> { n -> extOf(n) in videoExts }
-        "Audio" -> { n -> extOf(n) in audioExts }
-        else -> { n -> extOf(n) in documentExts }
-    }
-    val out = ArrayList<FileItem>()
-    val stack = java.util.ArrayDeque<File>()
-    stack.add(root)
-    while (stack.isNotEmpty()) {
-        val d = stack.removeLast()
-        val kids = d.listFiles() ?: continue
-        for (f in kids) {
-            if (f.name.startsWith(".")) continue
-            if (f.isDirectory) {
-                // Android/ holds other apps' private data and is not readable anyway.
-                if (d.absolutePath == root.absolutePath && f.name == "Android") continue
-                stack.add(f)
-            } else if (matcher(f.name)) {
-                out.add(FileItem(f, false, f.name, f.length(), f.lastModified()))
-            }
-        }
-    }
-    // Folders made inside the category's base folder (including empty ones)
-    // are listed first so a new folder shows up where it was created.
-    val subDirs = (File(root, cat.dirName).listFiles() ?: emptyArray())
+private fun isUserDocument(name: String): Boolean = extOf(name) in documentExts
+
+// Folders made inside the category's base folder (including empty ones) are
+// listed first so a new folder shows up where it was created.
+private fun baseSubdirs(cat: BaseFolder): List<FileItem> =
+    (File(storageRoot(), cat.dirName).listFiles() ?: emptyArray())
         .filter { it.isDirectory && !it.name.startsWith(".") }
         .sortedBy { it.name.lowercase(Locale.getDefault()) }
         .map { FileItem(it, true, it.name, 0L, it.lastModified()) }
-    return subDirs + out.sortedByDescending { it.lastModified }
+
+/** Category listing: media comes from MediaStore, documents from a whitelist. */
+private fun scanCategory(context: android.content.Context, cat: BaseFolder): List<FileItem> =
+    if (cat.nameEn == "Files") scanDocumentsCategory() else scanMediaCategory(context, cat)
+
+/**
+ * Photos / Videos / Audio from MediaStore, the same index the phone's
+ * gallery reads: everything in the gallery shows here, and app-private
+ * files never do.
+ */
+private fun scanMediaCategory(context: android.content.Context, cat: BaseFolder): List<FileItem> {
+    val uri = when (cat.nameEn) {
+        "Photos" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        "Videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+    }
+    val out = ArrayList<FileItem>()
+    val projection = arrayOf(
+        MediaStore.MediaColumns.DATA,
+        MediaStore.MediaColumns.DISPLAY_NAME,
+        MediaStore.MediaColumns.SIZE,
+        MediaStore.MediaColumns.DATE_MODIFIED
+    )
+    try {
+        context.contentResolver.query(
+            uri, projection, null, null,
+            MediaStore.MediaColumns.DATE_MODIFIED + " DESC"
+        )?.use { c ->
+            val pathCol = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+            if (pathCol < 0) return baseSubdirs(cat)
+            val nameCol = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+            val sizeCol = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
+            val dateCol = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+            while (c.moveToNext()) {
+                val path = c.getString(pathCol) ?: continue
+                val f = File(path)
+                if (!f.isFile) continue
+                val name = if (nameCol >= 0) c.getString(nameCol) ?: f.name else f.name
+                val size = if (sizeCol >= 0) c.getLong(sizeCol) else f.length()
+                // DATE_MODIFIED is seconds; FileItem wants millis.
+                val modified = if (dateCol >= 0) c.getLong(dateCol) * 1000 else f.lastModified()
+                out.add(FileItem(f, false, name, size, modified))
+            }
+        }
+    } catch (e: Exception) {
+        // If MediaStore is unavailable, show the base folder's subfolders only.
+    }
+    return baseSubdirs(cat) + out
+}
+
+/**
+ * The Files (documents) category: only the user's own well-known folders,
+ * only real document types. Hidden files, caches and anything under an
+ * Android folder are skipped, so files an app or the system needs never
+ * show up here.
+ */
+private val documentRootNames = listOf(
+    Environment.DIRECTORY_DOCUMENTS,
+    Environment.DIRECTORY_DOWNLOADS
+)
+
+private fun scanDocumentsCategory(): List<FileItem> {
+    val root = storageRoot()
+    val out = ArrayList<FileItem>()
+    val seen = HashSet<String>()
+    for (rootName in documentRootNames) {
+        val start = File(root, rootName)
+        if (!start.isDirectory) continue
+        val stack = java.util.ArrayDeque<File>()
+        stack.add(start)
+        while (stack.isNotEmpty()) {
+            val d = stack.removeLast()
+            val kids = d.listFiles() ?: continue
+            for (f in kids) {
+                if (f.name.startsWith(".")) continue
+                if (f.isDirectory) {
+                    if (f.name.equals("cache", ignoreCase = true)) continue
+                    if (f.name == "Android") continue
+                    stack.add(f)
+                } else if (isUserDocument(f.name) && seen.add(f.absolutePath)) {
+                    out.add(FileItem(f, false, f.name, f.length(), f.lastModified()))
+                }
+            }
+        }
+    }
+    val filesBase = baseFolders.first { it.nameEn == "Files" }
+    return baseSubdirs(filesBase) + out.sortedByDescending { it.lastModified }
+}
+
+// Sort modes for the listings. SORT_AUTO keeps each view's natural order
+// (categories: newest first; plain folders: name); the rest apply to every
+// view except the storage root, whose base-folder rows are fixed.
+private const val SORT_AUTO = "auto"
+private const val SORT_NEWEST = "newest"
+private const val SORT_OLDEST = "oldest"
+private const val SORT_NAME = "name"
+private const val SORT_EXT = "ext"
+
+private fun sortFilesFor(items: List<FileItem>, mode: String): List<FileItem> {
+    val byName = { f: FileItem -> f.name.lowercase(Locale.getDefault()) }
+    val dirs = items.filter { it.isDir }.sortedBy(byName)
+    val files = items.filter { !it.isDir }
+    val sorted = when (mode) {
+        SORT_OLDEST -> files.sortedWith(compareBy({ it.lastModified }, byName))
+        SORT_NAME -> files.sortedBy(byName)
+        SORT_EXT -> files.sortedWith(compareBy({ extOf(it.name) }, byName))
+        else -> files.sortedWith(compareByDescending<FileItem> { it.lastModified }.thenBy(byName))
+    }
+    return dirs + sorted
 }
 
 private fun extOf(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.US)
@@ -212,9 +309,9 @@ private fun baseFolderOf(f: File): BaseFolder? =
         it.dirName == f.name && f.parentFile?.absolutePath == storageRoot().absolutePath
     }
 
-private fun listDirContents(dir: File?, category: BaseFolder? = null, showOthers: Boolean = true): Listing {
+private fun listDirContents(context: android.content.Context, dir: File?, category: BaseFolder? = null, showOthers: Boolean = true): Listing {
     val storageRoot = storageRoot()
-    if (dir == null && category != null) return Listing(scanCategory(category), unreadable = false)
+    if (dir == null && category != null) return Listing(scanCategory(context, category), unreadable = false)
     if (dir == null) {
         // Root view: the four base folders first (always visible), then any
         // other folders and files sitting at the storage root.
@@ -293,6 +390,7 @@ fun FilesScreen(
     var categoryName by rememberSaveable { mutableStateOf<String?>(null) }
     var showOthers by rememberSaveable { mutableStateOf(false) }
     var gridMode by rememberSaveable { mutableStateOf(false) }
+    var sortMode by rememberSaveable { mutableStateOf(SORT_AUTO) }
     var selectedList by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     var refreshTick by remember { mutableIntStateOf(0) }
     var showNewFolderDialog by rememberSaveable { mutableStateOf(false) }
@@ -311,7 +409,7 @@ fun FilesScreen(
 
     val listing by produceState<Listing?>(initialValue = null, currentDirPath, categoryName, showOthers, refreshTick) {
         value = null
-        value = withContext(Dispatchers.IO) { listDirContents(currentDir, category, showOthers) }
+        value = withContext(Dispatchers.IO) { listDirContents(context, currentDir, category, showOthers) }
     }
 
     fun refresh() { refreshTick++ }
@@ -464,6 +562,35 @@ fun FilesScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
+                var showSortMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = if (isArabic) "ترتيب" else "Sort"
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showSortMenu,
+                        onDismissRequest = { showSortMenu = false }
+                    ) {
+                        listOf(
+                            SORT_AUTO to (if (isArabic) "الافتراضي" else "Default"),
+                            SORT_NEWEST to (if (isArabic) "الأحدث" else "Newest"),
+                            SORT_OLDEST to (if (isArabic) "الأقدم" else "Oldest"),
+                            SORT_NAME to (if (isArabic) "الاسم" else "Name"),
+                            SORT_EXT to (if (isArabic) "الامتداد" else "Extension")
+                        ).forEach { (mode, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    sortMode = mode
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
                 IconButton(onClick = { gridMode = !gridMode }) {
                     Icon(
                         if (gridMode) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
@@ -516,8 +643,12 @@ fun FilesScreen(
             }
         } else if (!gridMode) {
             val atRoot = currentDir == null
-            val head = if (atRoot) current.items.take(baseFolders.size) else current.items
-            val tail = if (atRoot) current.items.drop(baseFolders.size) else emptyList()
+            val displayItems =
+                if (currentDir == null && category == null) current.items
+                else if (sortMode == SORT_AUTO) current.items
+                else sortFilesFor(current.items, sortMode)
+            val head = if (atRoot) displayItems.take(baseFolders.size) else displayItems
+            val tail = if (atRoot) displayItems.drop(baseFolders.size) else emptyList()
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 listItems(head, key = { it.file.absolutePath }) { item ->
                     FileRow(
@@ -545,8 +676,12 @@ fun FilesScreen(
             }
         } else {
             val atRoot = currentDir == null
-            val head = if (atRoot) current.items.take(baseFolders.size) else current.items
-            val tail = if (atRoot) current.items.drop(baseFolders.size) else emptyList()
+            val displayItems =
+                if (currentDir == null && category == null) current.items
+                else if (sortMode == SORT_AUTO) current.items
+                else sortFilesFor(current.items, sortMode)
+            val head = if (atRoot) displayItems.take(baseFolders.size) else displayItems
+            val tail = if (atRoot) displayItems.drop(baseFolders.size) else emptyList()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier.fillMaxSize(),
