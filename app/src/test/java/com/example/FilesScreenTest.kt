@@ -195,6 +195,34 @@ class FilesScreenTest {
         }
     }
 
+    // --- Bug fix (user report): the show/hide-other-files toggle belongs to
+    // the storage root only. Inside a category it must not appear, and the
+    // category must list every item (the toggle used to be wedged in after
+    // the first four rows of every category). ---
+    @Test
+    fun categoryView_hasNoOthersToggle_andListsEveryItem() {
+        mkdir("Pictures/trips")
+        repeat(6) { insertMedia("DCIM/p$it.jpg") }
+        launch()
+        // The root still offers the toggle for the rest of the storage.
+        waitForText("عرض باقي الملفات")
+        clickRow("الصور")
+        waitForText("p0.jpg")
+        compose.onNodeWithText("trips").assertIsDisplayed()
+        // No toggle inside the category...
+        compose.onAllNodesWithText("عرض باقي الملفات").assertCountEquals(0)
+        compose.onAllNodesWithText("إخفاء باقي الملفات").assertCountEquals(0)
+        // ...and all six media items are listed, not just the first four.
+        for (i in 0 until 6) compose.onNodeWithText("p$i.jpg").assertExists()
+        // Same in the documents category.
+        compose.onNodeWithContentDescription("رجوع").performClick()
+        waitForText("الملفات")
+        clickRow("الملفات")
+        waitForText("هذا المجلد فارغ")
+        compose.onAllNodesWithText("عرض باقي الملفات").assertCountEquals(0)
+        compose.onAllNodesWithText("إخفاء باقي الملفات").assertCountEquals(0)
+    }
+
     // --- Feature (user request): sort by newest / oldest / name /
     // extension from the header button; the choice is remembered. ---
     @Test
