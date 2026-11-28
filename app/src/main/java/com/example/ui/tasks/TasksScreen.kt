@@ -1,5 +1,6 @@
 package com.example.ui.tasks
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -28,6 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Today
@@ -38,6 +41,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -46,16 +50,16 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +75,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.model.Task
 import com.example.ui.components.EmptyStateView
 import com.example.util.DateTimeUtils
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,34 +99,44 @@ fun TasksScreen(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showImportSheet by remember { mutableStateOf(false) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val importScope = rememberCoroutineScope()
+    val uiScope = rememberCoroutineScope()
 
     // Track collapsed state for groups
     val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
+
+    // Bulk delete: long press starts picking, then every tap ticks or unticks.
+    val selectionMode = uiState.isSelectionMode
+    val selectedIds = uiState.selectedTaskIds
+
+    // System back leaves picking first, before it changes tab or closes the app.
+    BackHandler(enabled = selectionMode) { viewModel.clearSelection() }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    viewModel.setTaskToEdit(null)
-                    showAddSheet = true
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = CircleShape,
-                modifier = Modifier
-                    .size(56.dp)
-                    .testTag("add_task_fab")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = if (isArabic) "إضافة مهمة" else "Add Task",
-                    modifier = Modifier.size(28.dp)
-                )
+            if (!selectionMode) {
+                FloatingActionButton(
+                    onClick = {
+                        viewModel.setTaskToEdit(null)
+                        showAddSheet = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .testTag("add_task_fab")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = if (isArabic) "إضافة مهمة" else "Add Task",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -130,128 +145,138 @@ fun TasksScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Daily Progress Banner Card (Prominent Today's Tasks Summary)
-            val progress = if (uiState.todayTotalCount > 0) {
-                uiState.todayCompletedCount.toFloat() / uiState.todayTotalCount
-            } else 0f
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            if (selectionMode) {
+                TaskSelectionToolbar(
+                    selectedCount = selectedIds.size,
+                    isArabic = isArabic,
+                    onClose = { viewModel.clearSelection() },
+                    onSelectAll = { viewModel.selectAll(uiState.displayedTasks.map { it.id }) },
+                    onDelete = { showBulkDeleteDialog = true }
                 )
-            ) {
-                Column(
+            } else {
+                // Daily Progress Banner Card (Prominent Today's Tasks Summary)
+                val progress = if (uiState.todayTotalCount > 0) {
+                    uiState.todayCompletedCount.toFloat() / uiState.todayTotalCount
+                } else 0f
+
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    )
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Today,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isArabic) "إنجاز مهام اليوم" else "Today's Task Progress",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (isArabic) {
-                                    "${uiState.todayCompletedCount} من ${uiState.todayTotalCount} مهام مكتملة (${DateTimeUtils.formatShortDate(DateTimeUtils.getTodayStartOfDay(), true)})"
-                                } else {
-                                    "${uiState.todayCompletedCount} of ${uiState.todayTotalCount} completed (${DateTimeUtils.formatShortDate(DateTimeUtils.getTodayStartOfDay(), false)})"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        // Percentage badge
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
-                            Text(
-                                text = "${(progress * 100).toInt()}%",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    LinearProgressIndicator(
-                        progress = { progress },
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Today,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isArabic) "إنجاز مهام اليوم" else "Today's Task Progress",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isArabic) {
+                                        "${uiState.todayCompletedCount} من ${uiState.todayTotalCount} مهام مكتملة (${DateTimeUtils.formatShortDate(DateTimeUtils.getTodayStartOfDay(), true)})"
+                                    } else {
+                                        "${uiState.todayCompletedCount} of ${uiState.todayTotalCount} completed (${DateTimeUtils.formatShortDate(DateTimeUtils.getTodayStartOfDay(), false)})"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            // Percentage badge
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            ) {
+                                Text(
+                                    text = "${(progress * 100).toInt()}%",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    }
                 }
-            }
 
-            // Filter Chips Row (Today / All)
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(TaskFilter.values()) { filter ->
-                    val selected = uiState.selectedFilter == filter
-                    FilterChip(
-                        selected = selected,
-                        onClick = { viewModel.setFilter(filter) },
-                        label = {
-                            Text(
-                                text = if (isArabic) filter.titleAr else filter.titleEn,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.testTag("filter_chip_${filter.name.lowercase()}")
-                    )
+                // Filter Chips Row (Today / All)
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(TaskFilter.values()) { filter ->
+                        val selected = uiState.selectedFilter == filter
+                        FilterChip(
+                            selected = selected,
+                            onClick = { viewModel.setFilter(filter) },
+                            label = {
+                                Text(
+                                    text = if (isArabic) filter.titleAr else filter.titleEn,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.testTag("filter_chip_${filter.name.lowercase()}")
+                        )
+                    }
                 }
-            }
 
-            // Bulk import: opens the Copy (prompt) and Paste pages
-            OutlinedButton(
-                onClick = { showImportSheet = true },
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 2.dp)
-                    .testTag("import_tasks_button")
-            ) {
-                Text(if (isArabic) "استيراد مهام (نسخ / لصق)" else "Import tasks (Copy / Paste)")
-            }
+                // Bulk import: opens the Copy (prompt) and Paste pages
+                OutlinedButton(
+                    onClick = { showImportSheet = true },
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .testTag("import_tasks_button")
+                ) {
+                    Text(if (isArabic) "استيراد مهام (نسخ / لصق)" else "Import tasks (Copy / Paste)")
+                }
 
-            Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             // Task Content: Grouped List or Filtered List
             if (uiState.displayedTasks.isEmpty()) {
@@ -332,7 +357,11 @@ fun TasksScreen(
                                             viewModel.setTaskToEdit(task)
                                             showAddSheet = true
                                         },
-                                        onDelete = { viewModel.setTaskToDelete(task) }
+                                        onDelete = { viewModel.setTaskToDelete(task) },
+                                        selectionMode = selectionMode,
+                                        isSelected = task.id in selectedIds,
+                                        onLongPress = { viewModel.startSelection(task.id) },
+                                        onToggleSelection = { viewModel.toggleSelection(task.id) }
                                     )
                                 }
                             }
@@ -348,7 +377,11 @@ fun TasksScreen(
                                     viewModel.setTaskToEdit(task)
                                     showAddSheet = true
                                 },
-                                onDelete = { viewModel.setTaskToDelete(task) }
+                                onDelete = { viewModel.setTaskToDelete(task) },
+                                selectionMode = selectionMode,
+                                isSelected = task.id in selectedIds,
+                                onLongPress = { viewModel.startSelection(task.id) },
+                                onToggleSelection = { viewModel.toggleSelection(task.id) }
                             )
                         }
                     }
@@ -401,7 +434,7 @@ fun TasksScreen(
                 onConfirm = { tasks ->
                     showImportSheet = false
                     viewModel.importTasks(tasks) { ids ->
-                        importScope.launch {
+                        uiScope.launch {
                             val r = snackbarHostState.showSnackbar(
                                 message = if (isArabic) "تمت إضافة ${ids.size} مهمة" else "Added ${ids.size} tasks",
                                 actionLabel = if (isArabic) "تراجع" else "Undo",
@@ -415,7 +448,7 @@ fun TasksScreen(
             )
         }
 
-        // Delete Confirmation Dialog
+        // Delete Confirmation Dialog (single task)
         taskToDelete?.let { task ->
             DeleteTaskConfirmationDialog(
                 task = task,
@@ -423,6 +456,98 @@ fun TasksScreen(
                 onConfirm = { viewModel.confirmDeleteTask() },
                 onDismiss = { viewModel.setTaskToDelete(null) }
             )
+        }
+
+        // Delete Confirmation Dialog (everything ticked in picking mode)
+        if (showBulkDeleteDialog) {
+            BulkDeleteTasksDialog(
+                count = selectedIds.size,
+                includesRecurring = uiState.allTasks.any { it.id in selectedIds && it.isRecurring },
+                isArabic = isArabic,
+                onConfirm = {
+                    val deletedCount = selectedIds.size
+                    showBulkDeleteDialog = false
+                    viewModel.deleteSelectedTasks()
+                    uiScope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = if (isArabic) {
+                                "تم حذف $deletedCount من المهام"
+                            } else {
+                                "Deleted $deletedCount tasks"
+                            }
+                        )
+                    }
+                },
+                onDismiss = { showBulkDeleteDialog = false }
+            )
+        }
+    }
+}
+
+/**
+ * Replaces the progress card and the filter chips while tasks are being picked:
+ * how many are ticked, select all, and delete everything ticked.
+ */
+@Composable
+private fun TaskSelectionToolbar(
+    selectedCount: Int,
+    isArabic: Boolean,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("selection_toolbar"),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.testTag("selection_close_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = if (isArabic) "إنهاء التحديد" else "Exit selection",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(
+                text = if (isArabic) "تم تحديد $selectedCount" else "$selectedCount selected",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.testTag("selection_count")
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            TextButton(
+                onClick = onSelectAll,
+                modifier = Modifier.testTag("selection_select_all_btn")
+            ) {
+                Text(if (isArabic) "تحديد الكل" else "Select all")
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.testTag("selection_delete_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = if (isArabic) "حذف المحدد" else "Delete selected",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }
