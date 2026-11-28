@@ -45,6 +45,18 @@ class FilesHelpersTest {
     }
 
     @Test
+    fun isUserDocument_hidesConfigAndSystemTypes() {
+        assertEquals(true, callStatic("isUserDocument", "report.PDF"))
+        assertEquals(true, callStatic("isUserDocument", "app-debug.apk"))
+        assertEquals(true, callStatic("isUserDocument", "archive.zip"))
+        assertEquals(false, callStatic("isUserDocument", "config.xml"))
+        assertEquals(false, callStatic("isUserDocument", "data.json"))
+        assertEquals(false, callStatic("isUserDocument", "app.db"))
+        assertEquals(false, callStatic("isUserDocument", "debug.log"))
+        assertEquals(false, callStatic("isUserDocument", "noext"))
+    }
+
+    @Test
     fun formatDate_epochZero_isEmpty() {
         assertEquals("", callStatic("formatDate", 0L, true))
         assertEquals("", callStatic("formatDate", -5L, false))
