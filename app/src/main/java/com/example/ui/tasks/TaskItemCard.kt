@@ -6,8 +6,11 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +53,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,7 +66,7 @@ import com.example.model.TaskPriority
 import com.example.ui.components.BadgeChip
 import com.example.util.DateTimeUtils
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TaskItemCard(
     task: Task,
@@ -69,7 +74,13 @@ fun TaskItemCard(
     onToggleCompletion: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Bulk-delete picking: while true, a tap ticks the task instead of opening it,
+    // the completion circle is replaced by a tick, and the options menu is hidden.
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onLongPress: () -> Unit = {},
+    onToggleSelection: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -97,19 +108,25 @@ fun TaskItemCard(
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (task.isCompleted) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            } else if (isOverdue) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-            } else {
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                task.isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                isOverdue -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                else -> MaterialTheme.colorScheme.surface
             }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (task.isCompleted) 0.dp else 2.dp),
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier
             .fillMaxWidth()
             .testTag("task_item_${task.id}")
-            .clickable { onEdit() }
+            .then(
+                if (selectionMode) Modifier.semantics { selected = isSelected } else Modifier
+            )
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelection() else onEdit() },
+                onLongClick = { if (selectionMode) onToggleSelection() else onLongPress() }
+            )
     ) {
         Row(
             modifier = Modifier
@@ -117,40 +134,76 @@ fun TaskItemCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Checkmark Circle Toggle with restrained animation
-            Box(
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(28.dp)
-                    .scale(checkScale)
-                    .clip(CircleShape)
-                    .clickable(onClick = onToggleCompletion)
-                    .testTag("toggle_task_${task.id}"),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.size(26.dp),
-                    shape = CircleShape,
-                    color = checkColor,
-                    border = androidx.compose.foundation.BorderStroke(
-                        width = 2.dp,
-                        color = if (task.isCompleted) {
-                            MaterialTheme.colorScheme.primary
-                        } else if (isOverdue) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.outline
-                        }
-                    )
+            if (selectionMode) {
+                // Tick for bulk delete. The completion circle is not tappable while picking.
+                Box(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(28.dp)
+                        .testTag("select_task_${task.id}"),
+                    contentAlignment = Alignment.Center
                 ) {
-                    if (task.isCompleted) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = if (isArabic) "مكتملة (انقر لإلغاء الإكمال)" else "Completed (tap to uncomplete)",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                    Surface(
+                        modifier = Modifier.size(26.dp),
+                        shape = CircleShape,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        border = BorderStroke(
+                            width = 2.dp,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            }
+                        )
+                    ) {
+                        if (isSelected) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = if (isArabic) "محددة" else "Selected",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Checkmark Circle Toggle with restrained animation
+                Box(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(28.dp)
+                        .scale(checkScale)
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggleCompletion)
+                        .testTag("toggle_task_${task.id}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.size(26.dp),
+                        shape = CircleShape,
+                        color = checkColor,
+                        border = BorderStroke(
+                            width = 2.dp,
+                            color = if (task.isCompleted) {
+                                MaterialTheme.colorScheme.primary
+                            } else if (isOverdue) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            }
+                        )
+                    ) {
+                        if (task.isCompleted) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = if (isArabic) "مكتملة (انقر لإلغاء الإكمال)" else "Completed (tap to uncomplete)",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -274,56 +327,59 @@ fun TaskItemCard(
                 }
             }
 
-            // Options menu (Edit / Delete)
-            Box {
-                IconButton(
-                    onClick = { menuExpanded = true },
-                    modifier = Modifier.testTag("task_menu_${task.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
-                        tint = MaterialTheme.colorScheme.outline
-                    )
-                }
+            // Options menu (Edit / Delete). Hidden while picking tasks: the tap
+            // there belongs to the selection, not to a single task's menu.
+            if (!selectionMode) {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.testTag("task_menu_${task.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
 
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(if (isArabic) "تعديل المهمة" else "Edit Task") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onEdit()
-                        },
-                        modifier = Modifier.testTag("menu_edit_${task.id}")
-                    )
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(if (isArabic) "تعديل المهمة" else "Edit Task") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            },
+                            modifier = Modifier.testTag("menu_edit_${task.id}")
+                        )
 
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (isArabic) "حذف المهمة" else "Delete Task",
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        },
-                        modifier = Modifier.testTag("menu_delete_${task.id}")
-                    )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isArabic) "حذف المهمة" else "Delete Task",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                            modifier = Modifier.testTag("menu_delete_${task.id}")
+                        )
+                    }
                 }
             }
         }
