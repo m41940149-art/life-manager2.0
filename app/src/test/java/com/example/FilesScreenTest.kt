@@ -1,9 +1,11 @@
 package com.example
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Intent
 import android.os.Environment
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -52,6 +54,41 @@ class FilesScreenTest {
         root = Environment.getExternalStorageDirectory()
         root.mkdirs()
         root.listFiles()?.forEach { it.deleteRecursively() }
+        val cr = RuntimeEnvironment.getApplication().contentResolver
+        cr.delete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, null, null)
+        cr.delete(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, null, null)
+        cr.delete(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null, null)
+    }
+
+    /** Register a fake file in MediaStore so media categories can see it,
+     *  exactly like the phone's gallery would. */
+    private fun insertMedia(rel: String, kind: String = "image") {
+        val f = mkfile(rel)
+        val (uri, mime) = when (kind) {
+            "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "video/mp4"
+            "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to "audio/mpeg"
+            else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "image/jpeg"
+        }
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DATA, f.absolutePath)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, f.name)
+            put(MediaStore.MediaColumns.SIZE, f.length())
+            put(MediaStore.MediaColumns.DATE_MODIFIED, f.lastModified() / 1000)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+        }
+        RuntimeEnvironment.getApplication().contentResolver.insert(uri, values)
+    }
+
+    private fun assertRowOrder(top: String, below: String) {
+        pump()
+        val topNodes = compose.onAllNodesWithText(top).fetchSemanticsNodes()
+        val belowNodes = compose.onAllNodesWithText(below).fetchSemanticsNodes()
+        assertTrue("$top not shown", topNodes.isNotEmpty())
+        assertTrue("$below not shown", belowNodes.isNotEmpty())
+        assertTrue(
+            "$top should be above $below",
+            topNodes.first().positionInRoot.y < belowNodes.first().positionInRoot.y
+        )
     }
 
     private fun mkfile(rel: String, content: String = "x") =
@@ -116,8 +153,11 @@ class FilesScreenTest {
     }
 
     @Test
-    fun category_showsOnlyMatchingFiles_anywhereInStorage() {
-        mkfile("DCIM/photo1.jpg")
+    fun category_showsOnlyMediaStoreFiles_anywhereInStorage() {
+        // Only files indexed by MediaStore (what the gallery shows) appear;
+        // loose files on storage without a MediaStore entry do not.
+        insertMedia("DCIM/photo1.jpg")
+        mkfile("Downloads/loose.jpg")
         mkfile("Downloads/notes.txt")
         mkfile("Music/song.mp3")
         mkdir("Pictures/trips")
@@ -126,8 +166,67 @@ class FilesScreenTest {
         clickRow("الصور")
         waitForText("photo1.jpg")
         compose.onNodeWithText("trips").assertIsDisplayed()
+        compose.onAllNodesWithText("loose.jpg").assertCountEquals(0)
         compose.onAllNodesWithText("notes.txt").assertCountEquals(0)
         compose.onAllNodesWithText("song.mp3").assertCountEquals(0)
+    }
+
+    // --- Design change (user request): the Files (documents) category scans
+    // only the user's own folders and only real document types, so app and
+    // system files cannot be deleted or moved by accident. ---
+    @Test
+    fun documentsCategory_whitelistShowsOnlyUserDocuments() {
+        mkfile("Download/report.pdf")
+        mkfile("Download/notes.txt")
+        mkfile("Download/app-debug.apk")
+        mkfile("Download/config.xml")
+        mkfile("Download/data.json")
+        mkfile("Download/cache/cached.pdf")
+        mkfile("Download/.hidden/secret.pdf")
+        mkfile("DCIM/stray.pdf")
+        launch()
+        waitForText("الملفات")
+        clickRow("الملفات")
+        waitForText("report.pdf")
+        compose.onNodeWithText("notes.txt").assertIsDisplayed()
+        compose.onNodeWithText("app-debug.apk").assertIsDisplayed()
+        for (hidden in listOf("config.xml", "data.json", "cached.pdf", "secret.pdf", "stray.pdf")) {
+            compose.onAllNodesWithText(hidden).assertCountEquals(0)
+        }
+    }
+
+    // --- Feature (user request): sort by newest / oldest / name /
+    // extension from the header button; the choice is remembered. ---
+    @Test
+    fun sortMenu_ordersFilesByNameNewestAndExtension() {
+        mkdir("S")
+        mkfile("S/bbb.txt")
+        mkfile("S/aaa.pdf")
+        File(root, "S/aaa.pdf").setLastModified(1_000_000L)
+        File(root, "S/bbb.txt").setLastModified(2_000_000L)
+        launch()
+        waitForText("عرض باقي الملفات")
+        clickRow("عرض باقي الملفات")
+        waitForText("S")
+        clickRow("S")
+        waitForText("aaa.pdf")
+        // Default in a plain folder: alphabetical.
+        assertRowOrder("aaa.pdf", "bbb.txt")
+        // Newest first.
+        compose.onNodeWithContentDescription("ترتيب").performClick()
+        waitForText("الأحدث")
+        compose.onNodeWithText("الأحدث").performClick()
+        assertRowOrder("bbb.txt", "aaa.pdf")
+        // By extension: pdf before txt.
+        compose.onNodeWithContentDescription("ترتيب").performClick()
+        waitForText("الامتداد")
+        compose.onNodeWithText("الامتداد").performClick()
+        assertRowOrder("aaa.pdf", "bbb.txt")
+        // Oldest first.
+        compose.onNodeWithContentDescription("ترتيب").performClick()
+        waitForText("الأقدم")
+        compose.onNodeWithText("الأقدم").performClick()
+        assertRowOrder("aaa.pdf", "bbb.txt")
     }
 
     // --- Bug fix: the four base folders must not be selectable, so they can
@@ -151,7 +250,7 @@ class FilesScreenTest {
     @Test
     fun backFromCategorySubfolder_returnsToCategoryView() {
         mkdir("Pictures/trips")
-        mkfile("DCIM/other.jpg")
+        insertMedia("DCIM/other.jpg")
         launch()
         waitForText("الصور")
         clickRow("الصور")
