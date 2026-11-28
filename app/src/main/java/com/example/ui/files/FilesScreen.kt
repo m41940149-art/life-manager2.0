@@ -642,7 +642,11 @@ fun FilesScreen(
                 }
             }
         } else if (!gridMode) {
-            val atRoot = currentDir == null
+            // The show/hide-other-files toggle belongs to the storage root
+            // only. Inside a category the listing already is the whole
+            // category, so the toggle has nothing to hide (it used to split
+            // the category list after the first four rows).
+            val atRoot = currentDir == null && category == null
             val displayItems =
                 if (currentDir == null && category == null) current.items
                 else if (sortMode == SORT_AUTO) current.items
@@ -675,7 +679,7 @@ fun FilesScreen(
                 }
             }
         } else {
-            val atRoot = currentDir == null
+            val atRoot = currentDir == null && category == null
             val displayItems =
                 if (currentDir == null && category == null) current.items
                 else if (sortMode == SORT_AUTO) current.items
