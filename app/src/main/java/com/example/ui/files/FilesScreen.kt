@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -39,7 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
@@ -54,6 +55,8 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -72,6 +75,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,6 +107,12 @@ import java.util.Locale
 // Nothing is uploaded, synced or stored in Firebase or anywhere else.
 // Full access (browse all folders, create, rename, move, delete) needs the
 // system "All files access" grant on Android 11+; the screen asks for it.
+//
+// The four base folders (Pictures, Music, Documents, Movies) are real
+// folders on the phone: they are created on disk when the page opens and they
+// cannot be renamed, moved or deleted from here. Tapping one opens a category
+// view that gathers matching files from the whole storage, with the folder's
+// own subfolders listed first.
 // ---------------------------------------------------------------------------
 
 private data class FileItem(
@@ -122,10 +132,8 @@ private val baseFolders = listOf(
     BaseFolder("الفيديوهات", "Videos", Environment.DIRECTORY_MOVIES)
 )
 
-private val imageExts = setOf(
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "tif", "tiff",
-    "svg", "ico", "raw", "dng", "cr2", "nef", "arw"
-)
+// Extensions Coil/Android can actually decode; others get a generic icon.
+private val imageExts = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif")
 private val videoExts = setOf(
     "mp4", "mkv", "avi", "3gp", "3g2", "webm", "mov", "m4v", "wmv", "flv", "mpg", "mpeg", "vob"
 )
@@ -141,7 +149,7 @@ private val documentExts = setOf(
 
 /** Scan the whole storage for every file whose extension belongs to [cat]. */
 private fun scanCategory(cat: BaseFolder): List<FileItem> {
-    val root = Environment.getExternalStorageDirectory()
+    val root = storageRoot()
     val matcher: (String) -> Boolean = when (cat.nameEn) {
         "Photos" -> { n -> extOf(n) in imageExts }
         "Videos" -> { n -> extOf(n) in videoExts }
@@ -190,9 +198,23 @@ private fun hasStorageAccess(context: android.content.Context): Boolean {
     }
 }
 
-private fun listDirContents(dir: File?, category: BaseFolder? = null, showOthers: Boolean = true): List<FileItem> {
-    val storageRoot = Environment.getExternalStorageDirectory()
-    if (category != null) return scanCategory(category)
+/** Result of listing a directory; [unreadable] marks a folder that exists but could not be read. */
+private class Listing(val items: List<FileItem>, val unreadable: Boolean)
+
+private fun storageRoot(): File = Environment.getExternalStorageDirectory()
+
+private fun isBaseFolderDir(f: File): Boolean =
+    f.parentFile?.absolutePath == storageRoot().absolutePath &&
+        baseFolders.any { it.dirName == f.name }
+
+private fun baseFolderOf(f: File): BaseFolder? =
+    baseFolders.firstOrNull {
+        it.dirName == f.name && f.parentFile?.absolutePath == storageRoot().absolutePath
+    }
+
+private fun listDirContents(dir: File?, category: BaseFolder? = null, showOthers: Boolean = true): Listing {
+    val storageRoot = storageRoot()
+    if (dir == null && category != null) return Listing(scanCategory(category), unreadable = false)
     if (dir == null) {
         // Root view: the four base folders first (always visible), then any
         // other folders and files sitting at the storage root.
@@ -209,14 +231,16 @@ private fun listDirContents(dir: File?, category: BaseFolder? = null, showOthers
             .map { f ->
                 FileItem(f, f.isDirectory, f.name, if (f.isFile) f.length() else 0L, f.lastModified())
             }
-        return if (showOthers) baseItems + sortItems(others) else baseItems
+        return Listing(if (showOthers) baseItems + sortItems(others) else baseItems, unreadable = false)
     }
-    val children = (dir.listFiles() ?: emptyArray())
+    if (!dir.exists() || !dir.isDirectory) return Listing(emptyList(), unreadable = false)
+    val kids = dir.listFiles() ?: return Listing(emptyList(), unreadable = true)
+    val children = kids
         .filter { !it.name.startsWith(".") }
         .map { f ->
             FileItem(f, f.isDirectory, f.name, if (f.isFile) f.length() else 0L, f.lastModified())
         }
-    return sortItems(children)
+    return Listing(sortItems(children), unreadable = false)
 }
 
 private fun sortItems(items: List<FileItem>): List<FileItem> =
@@ -238,10 +262,7 @@ private fun formatDate(millis: Long, isArabic: Boolean): String {
 }
 
 private fun displayName(item: FileItem, isArabic: Boolean): String {
-    val match = baseFolders.firstOrNull {
-        it.dirName == item.name &&
-            item.file.parentFile?.absolutePath == Environment.getExternalStorageDirectory().absolutePath
-    }
+    val match = baseFolderOf(item.file)
     return if (match != null) (if (isArabic) match.nameAr else match.nameEn) else item.name
 }
 
@@ -267,18 +288,28 @@ fun FilesScreen(
         return
     }
 
-    var currentDir by remember { mutableStateOf<File?>(null) }
-    var category by remember { mutableStateOf<BaseFolder?>(null) }
-    var showOthers by remember { mutableStateOf(false) }
+    // State survives rotation/process death where practical (saveable).
+    var currentDirPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var categoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    var showOthers by rememberSaveable { mutableStateOf(false) }
+    var gridMode by rememberSaveable { mutableStateOf(false) }
+    var selectedList by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     var refreshTick by remember { mutableIntStateOf(0) }
-    var gridMode by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(setOf<String>()) }
-    var showNewFolderDialog by remember { mutableStateOf(false) }
-    var renameTarget by remember { mutableStateOf<FileItem?>(null) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showMoveDialog by remember { mutableStateOf(false) }
+    var showNewFolderDialog by rememberSaveable { mutableStateOf(false) }
+    var renameTargetPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    var showMoveDialog by rememberSaveable { mutableStateOf(false) }
 
-    val items by produceState<List<FileItem>?>(initialValue = null, currentDir, category, showOthers, refreshTick) {
+    val currentDir: File? = currentDirPath?.let { File(it) }
+    val category: BaseFolder? = baseFolders.firstOrNull { it.dirName == categoryName }
+    val selected: Set<String> = selectedList.toSet()
+
+    fun setSelected(s: Set<String>) { selectedList = ArrayList(s) }
+    fun toggleSelect(path: String) {
+        setSelected(if (path in selected) selected - path else selected + path)
+    }
+
+    val listing by produceState<Listing?>(initialValue = null, currentDirPath, categoryName, showOthers, refreshTick) {
         value = null
         value = withContext(Dispatchers.IO) { listDirContents(currentDir, category, showOthers) }
     }
@@ -286,6 +317,28 @@ fun FilesScreen(
     fun refresh() { refreshTick++ }
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+
+    fun navigateUp() {
+        val root = storageRoot()
+        if (currentDir == null) {
+            // In a category view: up goes back to the storage root.
+            categoryName = null
+            return
+        }
+        val parent = currentDir?.parentFile
+        val baseDir = category?.let { File(root, it.dirName) }
+        currentDirPath = when {
+            parent == null || parent.absolutePath == root.absolutePath -> null
+            // A folder opened from a category goes back to that category view.
+            baseDir != null && parent.absolutePath == baseDir.absolutePath -> null
+            else -> parent.absolutePath
+        }
+    }
+
+    // Phone back button: clear selection first, then go up a folder; at the
+    // root it falls through to the app's normal back behavior.
+    BackHandler(enabled = selected.isNotEmpty()) { setSelected(emptySet()) }
+    BackHandler(enabled = selected.isEmpty() && (currentDir != null || category != null)) { navigateUp() }
 
     fun openFile(item: FileItem) {
         try {
@@ -310,6 +363,27 @@ fun FilesScreen(
 
     val selectionMode = selected.isNotEmpty()
 
+    // The four base folders at the root are protected: they cannot enter
+    // selection, so they can never be renamed, moved or deleted here.
+    fun isProtectedRow(item: FileItem): Boolean =
+        currentDir == null && category == null && item.isDir && baseFolders.any { it.dirName == item.name }
+
+    val rowClick: (FileItem) -> Unit = { item ->
+        when {
+            selectionMode -> if (!isProtectedRow(item)) toggleSelect(item.file.absolutePath)
+            item.isDir -> {
+                val baseMatch = if (currentDir == null && category == null)
+                    baseFolders.firstOrNull { it.dirName == item.name } else null
+                if (baseMatch != null) categoryName = baseMatch.dirName
+                else currentDirPath = item.file.absolutePath
+            }
+            else -> openFile(item)
+        }
+    }
+    val rowLongClick: (FileItem) -> Unit = { item ->
+        if (!isProtectedRow(item)) toggleSelect(item.file.absolutePath)
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         // Header
         if (selectionMode) {
@@ -319,7 +393,7 @@ fun FilesScreen(
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { selected = emptySet() }) {
+                IconButton(onClick = { setSelected(emptySet()) }) {
                     Icon(Icons.Filled.Close, contentDescription = if (isArabic) "إلغاء" else "Cancel")
                 }
                 Text(
@@ -329,8 +403,8 @@ fun FilesScreen(
                     modifier = Modifier.weight(1f)
                 )
                 if (selected.size == 1) {
-                    val item = items?.firstOrNull { it.file.absolutePath == selected.first() }
-                    IconButton(onClick = { if (item != null) renameTarget = item }) {
+                    val item = listing?.items?.firstOrNull { it.file.absolutePath == selected.first() }
+                    IconButton(onClick = { if (item != null) renameTargetPath = item.file.absolutePath }) {
                         Icon(
                             Icons.Filled.DriveFileRenameOutline,
                             contentDescription = if (isArabic) "إعادة تسمية" else "Rename"
@@ -359,15 +433,7 @@ fun FilesScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (currentDir != null || category != null) {
-                    IconButton(onClick = {
-                        if (category != null) {
-                            category = null
-                        } else {
-                            val parent = currentDir?.parentFile
-                            val root = Environment.getExternalStorageDirectory()
-                            currentDir = if (parent == null || parent.absolutePath == root.absolutePath) null else parent
-                        }
-                    }) {
+                    IconButton(onClick = { navigateUp() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = if (isArabic) "رجوع" else "Up"
@@ -376,9 +442,12 @@ fun FilesScreen(
                 }
                 Text(
                     text = when {
-                        category != null -> category?.let { if (isArabic) it.nameAr else it.nameEn } ?: ""
+                        currentDir == null && category != null ->
+                            category!!.let { if (isArabic) it.nameAr else it.nameEn }
                         currentDir == null -> if (isArabic) "الملفات" else "Files"
-                        else -> currentDir?.name ?: ""
+                        baseFolderOf(currentDir) != null ->
+                            baseFolderOf(currentDir)!!.let { if (isArabic) it.nameAr else it.nameEn }
+                        else -> currentDir.name
                     },
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
@@ -408,12 +477,28 @@ fun FilesScreen(
         }
 
         // Content
-        val list = items
-        if (list == null) {
+        val current = listing
+        if (current == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (list.isEmpty()) {
+        } else if (current.unreadable) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isArabic) "تعذر قراءة هذا المجلد" else "Could not read this folder",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (current.items.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
@@ -430,84 +515,38 @@ fun FilesScreen(
                 }
             }
         } else if (!gridMode) {
-            val atRoot = currentDir == null && category == null
-            val head = if (atRoot) list.take(baseFolders.size) else list
-            val tail = if (atRoot) list.drop(baseFolders.size) else emptyList()
-            val rowContent: @Composable (FileItem) -> Unit = { item ->
+            val atRoot = currentDir == null
+            val head = if (atRoot) current.items.take(baseFolders.size) else current.items
+            val tail = if (atRoot) current.items.drop(baseFolders.size) else emptyList()
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                listItems(head, key = { it.file.absolutePath }) { item ->
                     FileRow(
                         item = item,
                         isArabic = isArabic,
                         selected = item.file.absolutePath in selected,
                         selectionMode = selectionMode,
-                        onClick = {
-                            when {
-                                selectionMode -> {
-                                    val p = item.file.absolutePath
-                                    selected = if (p in selected) selected - p else selected + p
-                                }
-                                item.isDir -> {
-                                    val baseMatch = if (currentDir == null && category == null)
-                                        baseFolders.firstOrNull { it.dirName == item.name } else null
-                                    if (baseMatch != null) {
-                                        category = baseMatch
-                                    } else {
-                                        if (!item.file.exists()) item.file.mkdirs()
-                                        category = null
-                                        currentDir = item.file
-                                    }
-                                }
-                                else -> openFile(item)
-                            }
-                        },
-                        onLongClick = {
-                            val p = item.file.absolutePath
-                            selected = if (p in selected) selected - p else selected + p
-                        }
+                        onClick = { rowClick(item) },
+                        onLongClick = { rowLongClick(item) }
                     )
-            }
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                listItems(head, key = { it.file.absolutePath }) { item -> rowContent(item) }
+                }
                 if (atRoot) {
                     item(key = "toggle-others") { OthersToggle(isArabic, showOthers) { showOthers = !showOthers } }
-                    listItems(tail, key = { it.file.absolutePath }) { item -> rowContent(item) }
+                    listItems(tail, key = { it.file.absolutePath }) { item ->
+                        FileRow(
+                            item = item,
+                            isArabic = isArabic,
+                            selected = item.file.absolutePath in selected,
+                            selectionMode = selectionMode,
+                            onClick = { rowClick(item) },
+                            onLongClick = { rowLongClick(item) }
+                        )
+                    }
                 }
             }
         } else {
-            val atRoot = currentDir == null && category == null
-            val head = if (atRoot) list.take(baseFolders.size) else list
-            val tail = if (atRoot) list.drop(baseFolders.size) else emptyList()
-            val cardContent: @Composable (FileItem) -> Unit = { item ->
-                    FileCard(
-                        item = item,
-                        isArabic = isArabic,
-                        selected = item.file.absolutePath in selected,
-                        selectionMode = selectionMode,
-                        onClick = {
-                            when {
-                                selectionMode -> {
-                                    val p = item.file.absolutePath
-                                    selected = if (p in selected) selected - p else selected + p
-                                }
-                                item.isDir -> {
-                                    val baseMatch = if (currentDir == null && category == null)
-                                        baseFolders.firstOrNull { it.dirName == item.name } else null
-                                    if (baseMatch != null) {
-                                        category = baseMatch
-                                    } else {
-                                        if (!item.file.exists()) item.file.mkdirs()
-                                        category = null
-                                        currentDir = item.file
-                                    }
-                                }
-                                else -> openFile(item)
-                            }
-                        },
-                        onLongClick = {
-                            val p = item.file.absolutePath
-                            selected = if (p in selected) selected - p else selected + p
-                        }
-                    )
-            }
+            val atRoot = currentDir == null
+            val head = if (atRoot) current.items.take(baseFolders.size) else current.items
+            val tail = if (atRoot) current.items.drop(baseFolders.size) else emptyList()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier.fillMaxSize(),
@@ -515,12 +554,30 @@ fun FilesScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                gridItems(head, key = { it.file.absolutePath }) { item -> cardContent(item) }
+                gridItems(head, key = { it.file.absolutePath }) { item ->
+                    FileCard(
+                        item = item,
+                        isArabic = isArabic,
+                        selected = item.file.absolutePath in selected,
+                        selectionMode = selectionMode,
+                        onClick = { rowClick(item) },
+                        onLongClick = { rowLongClick(item) }
+                    )
+                }
                 if (atRoot) {
                     item(key = "toggle-others", span = { GridItemSpan(maxLineSpan) }) {
                         OthersToggle(isArabic, showOthers) { showOthers = !showOthers }
                     }
-                    gridItems(tail, key = { it.file.absolutePath }) { item -> cardContent(item) }
+                    gridItems(tail, key = { it.file.absolutePath }) { item ->
+                        FileCard(
+                            item = item,
+                            isArabic = isArabic,
+                            selected = item.file.absolutePath in selected,
+                            selectionMode = selectionMode,
+                            onClick = { rowClick(item) },
+                            onLongClick = { rowLongClick(item) }
+                        )
+                    }
                 }
             }
         }
@@ -531,8 +588,8 @@ fun FilesScreen(
             isArabic = isArabic,
             onDismiss = { showNewFolderDialog = false },
             onCreate = { name ->
-                val parent = category?.let { File(Environment.getExternalStorageDirectory(), it.dirName).also { d -> d.mkdirs() } }
-                    ?: currentDir ?: Environment.getExternalStorageDirectory()
+                val parent = category?.let { File(storageRoot(), it.dirName).also { d -> d.mkdirs() } }
+                    ?: currentDir ?: storageRoot()
                 val target = File(parent, name)
                 if (target.exists()) {
                     toast(if (isArabic) "يوجد مجلد بهذا الاسم بالفعل" else "A folder with this name already exists")
@@ -547,23 +604,24 @@ fun FilesScreen(
         )
     }
 
-    renameTarget?.let { target ->
+    renameTargetPath?.let { path ->
+        val target = File(path)
         RenameDialog(
             isArabic = isArabic,
             currentName = target.name,
-            onDismiss = { renameTarget = null },
+            onDismiss = { renameTargetPath = null },
             onRename = { newName ->
-                val dest = File(target.file.parentFile, newName)
+                val dest = File(target.parentFile, newName)
                 if (dest.exists()) {
                     toast(if (isArabic) "يوجد ملف بهذا الاسم بالفعل" else "Name already in use")
-                } else if (target.file.renameTo(dest)) {
+                } else if (target.renameTo(dest)) {
                     toast(if (isArabic) "تمت إعادة التسمية" else "Renamed")
-                    selected = emptySet()
+                    setSelected(emptySet())
                     refresh()
                 } else {
                     toast(if (isArabic) "تعذرت إعادة التسمية" else "Rename failed")
                 }
-                renameTarget = null
+                renameTargetPath = null
             }
         )
     }
@@ -589,7 +647,7 @@ fun FilesScreen(
                     toast(
                         if (isArabic) "تم حذف $ok عنصر" else "Deleted $ok item(s)"
                     )
-                    selected = emptySet()
+                    setSelected(emptySet())
                     showDeleteConfirm = false
                     refresh()
                 }) {
@@ -619,7 +677,10 @@ fun FilesScreen(
                         (destDir.absolutePath == src.absolutePath ||
                             destDir.absolutePath.startsWith(src.absolutePath + File.separator))
                     when {
-                        insideItself || dest.exists() -> failed++
+                        insideItself -> failed++
+                        // Already in that folder: a no-op, not a failure.
+                        dest.absolutePath == src.absolutePath -> ok++
+                        dest.exists() -> failed++
                         src.renameTo(dest) -> ok++
                         else -> failed++
                     }
@@ -630,7 +691,7 @@ fun FilesScreen(
                     else
                         if (failed == 0) "Moved $ok item(s)" else "Moved $ok, $failed failed"
                 )
-                selected = emptySet()
+                setSelected(emptySet())
                 showMoveDialog = false
                 refresh()
             }
@@ -756,8 +817,8 @@ private fun FileRow(
         }
         if (selectionMode) {
             Icon(
-                imageVector = if (selected) Icons.Filled.FolderOpen else Icons.Filled.Folder,
-                contentDescription = null,
+                imageVector = if (selected) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (selected) (if (isArabic) "محدد" else "Selected") else (if (isArabic) "غير محدد" else "Not selected"),
                 tint = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                 modifier = Modifier.size(20.dp)
@@ -954,7 +1015,7 @@ private fun MoveDialog(
     onDismiss: () -> Unit,
     onPick: (File) -> Unit
 ) {
-    val storageRoot = Environment.getExternalStorageDirectory()
+    val storageRoot = storageRoot()
     var pickerDir by remember { mutableStateOf(storageRoot) }
     val subdirs by produceState<List<File>>(initialValue = emptyList(), pickerDir) {
         value = withContext(Dispatchers.IO) {
@@ -1083,4 +1144,3 @@ private fun OthersToggle(isArabic: Boolean, expanded: Boolean, onToggle: () -> U
         )
     }
 }
-
