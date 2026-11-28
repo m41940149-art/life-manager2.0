@@ -40,8 +40,12 @@ data class TasksUiState(
     val selectedFilter: TaskFilter = TaskFilter.TODAY,
     val todayCompletedCount: Int = 0,
     val todayTotalCount: Int = 0,
-    val overdueCount: Int = 0
-)
+    val overdueCount: Int = 0,
+    // Ids ticked for bulk delete. Selection mode is on whenever this is not empty.
+    val selectedTaskIds: Set<String> = emptySet()
+) {
+    val isSelectionMode: Boolean get() = selectedTaskIds.isNotEmpty()
+}
 
 class TasksViewModel(
     private val repository: TaskRepository = AppContainer.taskRepository,
@@ -58,14 +62,18 @@ class TasksViewModel(
     private val _taskToEdit = MutableStateFlow<Task?>(null)
     val taskToEdit: StateFlow<Task?> = _taskToEdit.asStateFlow()
 
+    private val _selectedTaskIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTaskIds: StateFlow<Set<String>> = _selectedTaskIds.asStateFlow()
+
     // Bumped at midnight so the list switches to the new day while the app stays open.
     private val _dayTick = MutableStateFlow(startOfToday())
 
     val uiState: StateFlow<TasksUiState> = combine(
         repository.getTasks(),
         _selectedFilter,
-        _dayTick
-    ) { storedTasks, filter, today ->
+        _dayTick,
+        _selectedTaskIds
+    ) { storedTasks, filter, today, selectedIds ->
         // "Today" shows only today's tasks; "All" shows every saved task grouped by date.
         // Tasks of other dates stay saved either way; nothing is deleted here.
         val allTasks = storedTasks
@@ -151,7 +159,8 @@ class TasksViewModel(
             selectedFilter = filter,
             todayCompletedCount = todayCompleted,
             todayTotalCount = todayTasks.size,
-            overdueCount = overdueTasks.size
+            overdueCount = overdueTasks.size,
+            selectedTaskIds = selectedIds
         )
     }.stateIn(
         scope = viewModelScope,
@@ -176,7 +185,38 @@ class TasksViewModel(
     }
 
     fun setFilter(filter: TaskFilter) {
+        // Changing the list under a selection would leave ticked tasks the user cannot see.
+        _selectedTaskIds.value = emptySet()
         _selectedFilter.value = filter
+    }
+
+    /** Long press: enters selection mode with this task ticked. */
+    fun startSelection(taskId: String) {
+        _selectedTaskIds.value = setOf(taskId)
+    }
+
+    /** Tap while selecting: ticks or unticks the task. */
+    fun toggleSelection(taskId: String) {
+        val current = _selectedTaskIds.value
+        _selectedTaskIds.value = if (taskId in current) current - taskId else current + taskId
+    }
+
+    fun clearSelection() {
+        _selectedTaskIds.value = emptySet()
+    }
+
+    fun selectAll(taskIds: Collection<String>) {
+        _selectedTaskIds.value = taskIds.toSet()
+    }
+
+    /** Permanent delete of every ticked task, then leaves selection mode. */
+    fun deleteSelectedTasks() {
+        val ids = _selectedTaskIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { repository.deleteTask(it) }
+            _selectedTaskIds.value = emptySet()
+        }
     }
 
     fun toggleTask(taskId: String) {
